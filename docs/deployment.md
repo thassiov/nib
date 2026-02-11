@@ -74,14 +74,14 @@ openssl rand -hex 32
 ## Run
 
 ```bash
-NODE_ENV=production node dist/server/index.js
+NODE_ENV=production node dist/server/main.js
 ```
 
-In production mode, the Express server serves the built client files as static assets and handles all routes (API, auth, and SPA fallback) on a single port.
+In production mode, NestJS serves the built client files as static assets via `@nestjs/serve-static` and handles all routes (API, auth, and SPA fallback) on a single port. The `ServeStaticModule` is conditionally loaded only when `NODE_ENV=production`.
 
 ## Reverse proxy
 
-nib should sit behind a reverse proxy that handles TLS termination. The app trusts `X-Forwarded-*` headers (`trust proxy` is enabled) for secure cookie handling.
+nib should sit behind a reverse proxy that handles TLS termination. The app trusts `X-Forwarded-*` headers (`trust proxy` is enabled in `main.ts`) for secure cookie handling.
 
 ### nginx example
 
@@ -113,8 +113,8 @@ server {
 
 ### Important proxy settings
 
-- `X-Forwarded-Proto` must be set for secure cookies to work. Express checks this header when `trust proxy` is enabled.
-- `client_max_body_size` should match the Express JSON limit (50MB) to allow large drawings.
+- `X-Forwarded-Proto` must be set for secure cookies to work. NestJS checks this header when `trust proxy` is enabled.
+- `client_max_body_size` should match the body parser limit (50MB) to allow large drawings.
 - The proxy should forward the `Host` header so the OIDC callback URL resolves correctly.
 
 ## systemd service
@@ -128,7 +128,7 @@ After=network.target postgresql.service
 Type=simple
 User=nib
 WorkingDirectory=/opt/nib
-ExecStart=/usr/bin/node dist/server/index.js
+ExecStart=/usr/bin/node dist/server/main.js
 EnvironmentFile=/opt/nib/.env
 Restart=on-failure
 RestartSec=5
@@ -152,7 +152,7 @@ Returns:
 { "status": "ok", "service": "nib", "db": "connected" }
 ```
 
-The health endpoint checks database connectivity. If the database is unreachable, it returns `"db": "disconnected"` but still responds with status `"ok"` (the server itself is running). This is intentional — nib starts even if the database isn't ready yet, and will connect on first request.
+The health endpoint checks database connectivity via `Sequelize.authenticate()`. If the database is unreachable, it returns `"db": "disconnected"` but still responds with status `"ok"` (the server itself is running). This is intentional — nib starts even if the database isn't ready yet, and will connect on first request.
 
 ## Backups
 

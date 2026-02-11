@@ -1,17 +1,44 @@
 /**
- * Shared test helpers: Express app factory, fixtures, session helpers.
+ * Shared test helpers: Nest app factory via TestingModule, fixtures, session helpers.
  */
-import express from "express";
+import { Test } from "@nestjs/testing";
+import { INestApplication } from "@nestjs/common";
+import { SequelizeModule, getConnectionToken } from "@nestjs/sequelize";
 import session from "express-session";
-import scenesRouter from "../routes/scenes.js";
-import authRouter from "../routes/auth.js";
+import express from "express";
+import { Sequelize } from "sequelize-typescript";
+import { UserModel } from "../database/models/user.model.js";
+import { SceneModel } from "../database/models/scene.model.js";
+import { AuthModule } from "../auth/auth.module.js";
+import { ScenesModule } from "../scenes/scenes.module.js";
+import { UsersModule } from "../users/users.module.js";
+import { AppController } from "../app.controller.js";
 
 /**
- * Creates a fresh Express app for testing (same middleware as production).
+ * Creates a NestJS test application backed by a fresh SQLite in-memory DB.
+ * Each test app gets its own Sequelize connection with tables synced.
  */
-export function createApp() {
-  const app = express();
+export async function createTestApp(): Promise<INestApplication> {
+  const moduleRef = await Test.createTestingModule({
+    imports: [
+      SequelizeModule.forRoot({
+        dialect: "sqlite",
+        storage: ":memory:",
+        logging: false,
+        models: [UserModel, SceneModel],
+        synchronize: true, // Auto-create tables
+      }),
+      SequelizeModule.forFeature([UserModel, SceneModel]),
+      UsersModule,
+      AuthModule,
+      ScenesModule,
+    ],
+    controllers: [AppController],
+  }).compile();
 
+  const app = moduleRef.createNestApplication();
+
+  // Session middleware (same as production)
   app.use(
     session({
       secret: "test-secret",
@@ -22,31 +49,43 @@ export function createApp() {
   );
 
   app.use(express.json({ limit: "50mb" }));
-  app.use("/auth", authRouter);
-  app.use("/api/scenes", scenesRouter);
 
+  // Enable foreign keys in SQLite and sync tables
+  const sequelize = moduleRef.get<Sequelize>(getConnectionToken());
+  await sequelize.query("PRAGMA foreign_keys = ON;");
+  await sequelize.sync({ force: true });
+
+  await app.init();
   return app;
 }
 
 /**
- * Middleware that injects a fake authenticated session for testing.
- * Use: app.use(fakeAuth({ userId: "...", sub: "...", username: "..." }))
+ * Creates a NestJS test application with a pre-authenticated session.
+ * Injects fake auth middleware before the Nest routes.
  */
-export function fakeAuth(sessionData: { userId: string; sub?: string; username?: string }) {
-  return (req: express.Request, _res: express.Response, next: express.NextFunction) => {
-    req.session.userId = sessionData.userId;
-    req.session.sub = sessionData.sub || "test-sub";
-    req.session.username = sessionData.username || "testuser";
-    next();
-  };
-}
+export async function createAuthenticatedTestApp(
+  sessionData: { userId: string; sub?: string; username?: string },
+): Promise<INestApplication> {
+  const moduleRef = await Test.createTestingModule({
+    imports: [
+      SequelizeModule.forRoot({
+        dialect: "sqlite",
+        storage: ":memory:",
+        logging: false,
+        models: [UserModel, SceneModel],
+        synchronize: true,
+      }),
+      SequelizeModule.forFeature([UserModel, SceneModel]),
+      UsersModule,
+      AuthModule,
+      ScenesModule,
+    ],
+    controllers: [AppController],
+  }).compile();
 
-/**
- * Creates an Express app with a pre-authenticated session.
- */
-export function createAuthenticatedApp(sessionData: { userId: string; sub?: string; username?: string }) {
-  const app = express();
+  const app = moduleRef.createNestApplication();
 
+  // Session middleware
   app.use(
     session({
       secret: "test-secret",
@@ -56,11 +95,24 @@ export function createAuthenticatedApp(sessionData: { userId: string; sub?: stri
     }),
   );
 
-  app.use(express.json({ limit: "50mb" }));
-  app.use(fakeAuth(sessionData));
-  app.use("/auth", authRouter);
-  app.use("/api/scenes", scenesRouter);
+  // Inject fake auth session data
+  app.use((req: any, _res: any, next: any) => {
+    if (req.session) {
+      req.session.userId = sessionData.userId;
+      req.session.sub = sessionData.sub || "test-sub";
+      req.session.username = sessionData.username || "testuser";
+    }
+    next();
+  });
 
+  app.use(express.json({ limit: "50mb" }));
+
+  // Enable foreign keys in SQLite and sync tables
+  const sequelize = moduleRef.get<Sequelize>(getConnectionToken());
+  await sequelize.query("PRAGMA foreign_keys = ON;");
+  await sequelize.sync({ force: true });
+
+  await app.init();
   return app;
 }
 

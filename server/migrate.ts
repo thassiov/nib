@@ -1,4 +1,7 @@
-import { sequelize } from "./db.js";
+import "reflect-metadata";
+import { Sequelize } from "sequelize-typescript";
+import { UserModel } from "./database/models/user.model.js";
+import { SceneModel } from "./database/models/scene.model.js";
 
 /**
  * Sync Sequelize models to the database.
@@ -7,9 +10,6 @@ import { sequelize } from "./db.js";
  *   npx tsx server/migrate.ts          # safe sync (create missing tables only)
  *   npx tsx server/migrate.ts --alter   # alter existing tables to match models
  *   npx tsx server/migrate.ts --force   # drop & recreate (DESTRUCTIVE)
- *
- * Alternatively, use the raw SQL migration:
- *   psql -h postgres.grid.local -U grid_admin -d nib -f migrations/001_initial.sql
  */
 
 async function migrate() {
@@ -25,6 +25,17 @@ async function migrate() {
   if (flag === "--force") {
     console.warn("WARNING: --force will DROP and recreate all tables!");
   }
+
+  const sequelize = new Sequelize({
+    dialect: "postgres",
+    host: process.env.DB_HOST || "postgres.grid.local",
+    port: parseInt(process.env.DB_PORT || "5432"),
+    database: process.env.DB_NAME || "nib",
+    username: process.env.DB_USER || "grid_admin",
+    password: process.env.DB_PASS,
+    logging: console.log,
+    models: [UserModel, SceneModel],
+  });
 
   try {
     await sequelize.authenticate();

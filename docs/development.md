@@ -15,17 +15,17 @@ npm install
 npm run dev
 
 # Or run them separately
-npm run dev:server   # Express on :3000 (tsx watch)
+npm run dev:server   # NestJS on :3000 (tsx watch)
 npm run dev:client   # Vite on :5173 (proxies /api and /auth to :3000)
 ```
 
-The Vite dev server proxies `/api` and `/auth` requests to the Express server, so the client and server behave as a single origin during development.
+The Vite dev server proxies `/api` and `/auth` requests to the NestJS server, so the client and server behave as a single origin during development.
 
 ### Without Authelia
 
 If you don't have an Authelia instance, the app still works — you just can't log in. The public gallery and scene viewing endpoints work without authentication. The health endpoint works too.
 
-For testing authenticated flows without Authelia, you can use the test helpers (`fakeAuth()`) or hit the API directly with a session cookie from a test.
+For testing authenticated flows without Authelia, you can use the test helpers (`createAuthenticatedTestApp()`) or hit the API directly with a session cookie from a test.
 
 ## Project structure
 
@@ -39,27 +39,60 @@ nib/
     pages/                   Route pages
     __tests__/               Client tests (jsdom)
 
-  server/                    Express API
-    index.ts                 App setup and start
-    db.ts                    Sequelize models and initDb()
-    migrate.ts               Database migration script
+  server/                    NestJS API
+    main.ts                  Bootstrap (session, body parser, trust proxy)
+    app.module.ts            Root module (imports all feature modules)
+    app.controller.ts        GET /api/health
+
+    database/
+      database.module.ts     SequelizeModule.forRoot() with PostgreSQL config
+      models/
+        user.model.ts        sequelize-typescript @Table/@Column decorators
+        scene.model.ts       sequelize-typescript @Table/@Column decorators
+
     auth/
-      oidc.ts                OIDC client (openid-client v6)
-      middleware.ts          requireAuth, optionalAuth
+      auth.module.ts         Imports UsersModule, exports guards
+      auth.controller.ts     /auth/login, callback, logout, me
+      auth.service.ts        Injectable wrapper around oidc.ts
+      oidc.ts                OIDC client (openid-client v6, PKCE)
       session.d.ts           Session type augmentation
-    routes/
-      auth.ts                Login, callback, logout, me
-      scenes.ts              Scene CRUD
+      guards/
+        auth.guard.ts        Requires authenticated session
+        optional-auth.guard.ts  Allows anonymous access
+
+    scenes/
+      scenes.module.ts       Imports SceneModel, AuthModule
+      scenes.controller.ts   Thin controller with @UseGuards
+      scenes.service.ts      Business logic (unified list, CRUD, validation)
+      scenes.repository.ts   Data access with pagination and eager loading
+      validator/
+        scene-validator.service.ts  Injectable wrapper around validator.ts
+      dto/
+        create-scene.dto.ts  class-validator decorators
+        update-scene.dto.ts
+        list-scenes-query.dto.ts
+
+    users/
+      users.module.ts        Imports UserModel, exports UsersService
+      users.service.ts       User operations (upsert, find)
+      users.repository.ts    Data access with @InjectModel
+
     services/
-      validator.ts           Excalidraw scene validator
+      validator.ts           Excalidraw scene structural validator
+      validator.test.ts      Validator unit tests (26 tests)
+
     __tests__/
-      setup.ts               Test setup (SQLite swap)
-      helpers.ts             App factory, fakeAuth, fixtures
+      setup.ts               Shared SQLite Sequelize for model-level tests
+      helpers.ts             createTestApp(), createAuthenticatedTestApp(), fixtures
+
+    migrate.ts               Database migration script (sequelize-typescript models)
+    db.test.ts               Model/association tests (11 tests)
 
   docs/                      Documentation
   vitest.config.ts           Test configuration
   vite.config.ts             Client build configuration
   tsconfig.json              TypeScript configuration
+  tsconfig.server.json       Server-only build configuration
   package.json               Dependencies and scripts
 ```
 
@@ -68,10 +101,10 @@ nib/
 | Script | Description |
 |---|---|
 | `npm run dev` | Start server + client in parallel (hot reload) |
-| `npm run dev:server` | Start Express with `tsx watch` |
+| `npm run dev:server` | Start NestJS with `tsx watch` |
 | `npm run dev:client` | Start Vite dev server |
 | `npm run build` | Build client (Vite) and server (tsc) |
-| `npm start` | Run production server |
+| `npm start` | Run production server (`node dist/server/main.js`) |
 | `npm test` | Run all tests once |
 | `npm run test:watch` | Run tests in watch mode |
 | `npm run migrate` | Sync database schema |
@@ -91,33 +124,43 @@ Tests use **Vitest** with two environments:
 - **Server tests** (`server/**/*.test.ts`) — Run in Node.js with SQLite in-memory
 - **Client tests** (`client/**/*.test.tsx`) — Run in jsdom
 
-All test files run sequentially in a single fork (`isolate: false`) because server tests share the SQLite in-memory database.
+All test files run sequentially in a single fork (`isolate: false`) because server tests share state within their test suites.
+
+### Test suites
+
+| File | Tests | What it covers |
+|---|---|---|
+| `server/services/validator.test.ts` | 26 | Excalidraw scene structural validation |
+| `server/db.test.ts` | 11 | Model creation, associations, cascade delete |
+| `server/scenes/scenes.test.ts` | 26 | Full scene API (CRUD, auth, pagination, validation) |
+| `server/auth/guards/auth.guard.test.ts` | 3 | Auth guard (authenticated, unauthenticated, public) |
+| `client/__tests__/AuthContext.test.tsx` | 6 | Client-side auth state management |
 
 ### Server test setup
 
-`server/__tests__/setup.ts` runs before all tests. It:
-1. Calls `initDb()` to swap Sequelize from PostgreSQL to SQLite in-memory
-2. Runs `sequelize.sync({ force: true })` to create tables
+There are two test setups depending on the test level:
 
-This means server tests don't need PostgreSQL — they run entirely in memory.
+**Model tests** (`db.test.ts`): `server/__tests__/setup.ts` creates a shared Sequelize instance with SQLite in-memory, enables `PRAGMA foreign_keys`, and syncs all models. Tests import models directly.
 
-### Test helpers
-
-`server/__tests__/helpers.ts` provides:
+**Integration tests** (`scenes.test.ts`, `auth.guard.test.ts`): `server/__tests__/helpers.ts` provides factory functions that create full NestJS test applications:
 
 ```typescript
-// Express app without auth (for public endpoint tests)
-const app = createApp();
+// NestJS app without auth (for public endpoint tests)
+const app = await createTestApp();
 
-// Express app with fake auth session injected
-const app = createAuthenticatedApp({ userId: "user-123" });
+// NestJS app with fake auth session injected
+const app = await createAuthenticatedTestApp({ userId: "user-123" });
+```
 
-// Middleware that injects session data
-app.use(fakeAuth({ userId: "user-123", sub: "sub", username: "alice" }));
+Each test app gets its own SQLite in-memory database via `SequelizeModule.forRoot()`. The helpers also set up session middleware and sync tables. Tests use `supertest` against `app.getHttpServer()`.
 
-// Fixture data
-VALID_SCENE    // { elements: [rectangle], appState: {}, files: {} }
-VALID_TEXT_SCENE  // { elements: [text element], ... }
+### Fixture data
+
+```typescript
+import { VALID_SCENE, VALID_TEXT_SCENE } from "../__tests__/helpers.js";
+
+VALID_SCENE      // { elements: [rectangle], appState: {}, files: {} }
+VALID_TEXT_SCENE  // { elements: [text element], appState: {}, files: {} }
 ```
 
 ### Client test setup
@@ -126,14 +169,18 @@ Client tests use `@vitest-environment jsdom` (set per-file via the docblock comm
 
 ### Writing tests
 
-**Server route tests:**
+**Integration tests (scene API):**
 ```typescript
-import { createApp, createAuthenticatedApp, VALID_SCENE } from "../__tests__/helpers.js";
+import request from "supertest";
+import { createTestApp, createAuthenticatedTestApp, VALID_SCENE } from "../__tests__/helpers.js";
 
 it("creates scene with valid data", async () => {
-  const app = createAuthenticatedApp({ userId });
-  const res = await request(app).post("/api/scenes").send({ data: VALID_SCENE });
+  const app = await createAuthenticatedTestApp({ userId });
+  const res = await request(app.getHttpServer())
+    .post("/api/scenes")
+    .send({ data: VALID_SCENE });
   expect(res.status).toBe(201);
+  await app.close();
 });
 ```
 
@@ -199,6 +246,7 @@ SELECT id, title, pg_column_size(data) AS bytes FROM scenes ORDER BY bytes DESC;
 
 - **TypeScript strict mode** — No `any` unless absolutely necessary
 - **ESM** — The project uses ES modules (`"type": "module"` in package.json). Imports use `.js` extensions for Node.js compatibility (TypeScript resolves `.ts` files from `.js` imports)
-- **No ORMs in tests** — Test files import models directly, not through an abstraction layer
+- **Explicit `@Inject()`** — All NestJS constructor parameters use `@Inject(ClassName)` because esbuild (used by tsx) doesn't support `emitDecoratorMetadata`. See the architecture doc for details.
+- **Layered architecture** — Controllers handle HTTP, services handle business logic, repositories handle data access. No direct model queries in controllers.
 - **Inline styles** — The client uses inline React styles (no CSS framework yet). This may change when the UI gets more complex.
 - **Error responses** — All API errors return `{ error: "message" }`. Validation failures return `{ error: "message", validation: { valid, errors, elementCount } }`.

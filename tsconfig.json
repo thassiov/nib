@@ -11,6 +11,8 @@
     "isolatedModules": true,
     "jsx": "react-jsx",
     "baseUrl": ".",
+    "experimentalDecorators": true,
+    "emitDecoratorMetadata": true,
     "paths": {
       "@/*": ["client/*"],
       "@server/*": ["server/*"]
