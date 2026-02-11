@@ -1,10 +1,11 @@
 import { Router, Request, Response } from "express";
 import { Scene, User } from "../db.js";
 import { validateScene, checkSizeLimit } from "../services/validator.js";
+import { requireAuth, optionalAuth } from "../auth/middleware.js";
 
 const router = Router();
 
-// ---------- Validation endpoint ----------
+// ---------- Validation endpoint (no auth required) ----------
 
 /**
  * POST /api/scenes/validate
@@ -14,7 +15,7 @@ const router = Router();
  */
 router.post("/validate", (req: Request, res: Response) => {
   const sizeError = checkSizeLimit(
-    req.headers["content-length"] ? parseInt(req.headers["content-length"]) : 0
+    req.headers["content-length"] ? parseInt(req.headers["content-length"]) : 0,
   );
   if (sizeError) {
     res.status(413).json({ valid: false, errors: [sizeError], elementCount: 0 });
@@ -29,20 +30,42 @@ router.post("/validate", (req: Request, res: Response) => {
 
 /**
  * GET /api/scenes/my
- * List scenes owned by the current user.
- * TODO: Require auth.
+ * List scenes owned by the current user. Requires auth.
  */
-router.get("/my", async (_req: Request, res: Response) => {
-  // TODO: Get user_id from session
-  // For now, return empty since auth isn't wired yet
-  res.json({ scenes: [], message: "Auth not yet implemented" });
+router.get("/my", requireAuth, async (req: Request, res: Response) => {
+  try {
+    const page = Math.max(1, parseInt(req.query.page as string) || 1);
+    const limit = Math.min(100, Math.max(1, parseInt(req.query.limit as string) || 20));
+    const offset = (page - 1) * limit;
+
+    const { count, rows } = await Scene.findAndCountAll({
+      where: { user_id: req.session.userId },
+      order: [["updated_at", "DESC"]],
+      limit,
+      offset,
+      attributes: ["id", "title", "thumbnail", "is_public", "created_at", "updated_at"],
+    });
+
+    res.json({
+      scenes: rows,
+      pagination: {
+        page,
+        limit,
+        total: count,
+        pages: Math.ceil(count / limit),
+      },
+    });
+  } catch (err) {
+    console.error("Error listing user scenes:", err);
+    res.status(500).json({ error: "Internal server error" });
+  }
 });
 
 // ---------- Public gallery ----------
 
 /**
  * GET /api/scenes
- * List public scenes (gallery). Paginated.
+ * List public scenes (gallery). Paginated. No auth required.
  * Query: ?page=1&limit=20
  */
 router.get("/", async (req: Request, res: Response) => {
@@ -80,9 +103,9 @@ router.get("/", async (req: Request, res: Response) => {
 /**
  * GET /api/scenes/:id
  * Get full scene data. Public scenes are accessible to anyone.
- * Private scenes require the owner (auth checked later).
+ * Private scenes are only accessible to the owner.
  */
-router.get("/:id", async (req: Request, res: Response) => {
+router.get("/:id", optionalAuth, async (req: Request, res: Response) => {
   try {
     const scene = await Scene.findByPk(req.params.id, {
       include: [{ model: User, as: "user", attributes: ["id", "username", "avatar_url"] }],
@@ -93,10 +116,10 @@ router.get("/:id", async (req: Request, res: Response) => {
       return;
     }
 
-    // TODO: Once auth is wired, check ownership for private scenes.
-    // For now, allow access to all scenes.
-    if (!scene.is_public) {
-      // Placeholder: will check req.session.userId === scene.user_id
+    // Private scenes: only the owner can view
+    if (!scene.is_public && scene.user_id !== req.session.userId) {
+      res.status(404).json({ error: "Scene not found" });
+      return;
     }
 
     res.json(scene);
@@ -111,14 +134,12 @@ router.get("/:id", async (req: Request, res: Response) => {
 /**
  * POST /api/scenes
  * Body: { title?, data, is_public? }
- * Creates a new scene after validation.
- * TODO: Require auth, set user_id from session.
+ * Creates a new scene after validation. Requires auth.
  */
-router.post("/", async (req: Request, res: Response) => {
+router.post("/", requireAuth, async (req: Request, res: Response) => {
   try {
     const { title, data, is_public } = req.body;
 
-    // Validate the scene data
     const validation = validateScene(data);
     if (!validation.valid) {
       res.status(422).json({
@@ -132,7 +153,7 @@ router.post("/", async (req: Request, res: Response) => {
       title: title || "Untitled",
       data,
       is_public: is_public ?? false,
-      // user_id will come from auth session later
+      user_id: req.session.userId,
     });
 
     res.status(201).json(scene);
@@ -147,10 +168,9 @@ router.post("/", async (req: Request, res: Response) => {
 /**
  * PUT /api/scenes/:id
  * Body: { title?, data?, is_public?, thumbnail? }
- * Updates an existing scene.
- * TODO: Require auth, verify ownership.
+ * Updates an existing scene. Requires auth + ownership.
  */
-router.put("/:id", async (req: Request, res: Response) => {
+router.put("/:id", requireAuth, async (req: Request, res: Response) => {
   try {
     const scene = await Scene.findByPk(req.params.id);
     if (!scene) {
@@ -158,11 +178,13 @@ router.put("/:id", async (req: Request, res: Response) => {
       return;
     }
 
-    // TODO: Check ownership via auth session
+    if (scene.user_id !== req.session.userId) {
+      res.status(403).json({ error: "Not authorized to modify this scene" });
+      return;
+    }
 
     const { title, data, is_public, thumbnail } = req.body;
 
-    // If new scene data provided, validate it
     if (data !== undefined) {
       const validation = validateScene(data);
       if (!validation.valid) {
@@ -193,10 +215,9 @@ router.put("/:id", async (req: Request, res: Response) => {
 
 /**
  * DELETE /api/scenes/:id
- * Deletes a scene.
- * TODO: Require auth, verify ownership.
+ * Deletes a scene. Requires auth + ownership.
  */
-router.delete("/:id", async (req: Request, res: Response) => {
+router.delete("/:id", requireAuth, async (req: Request, res: Response) => {
   try {
     const scene = await Scene.findByPk(req.params.id);
     if (!scene) {
@@ -204,7 +225,10 @@ router.delete("/:id", async (req: Request, res: Response) => {
       return;
     }
 
-    // TODO: Check ownership via auth session
+    if (scene.user_id !== req.session.userId) {
+      res.status(403).json({ error: "Not authorized to delete this scene" });
+      return;
+    }
 
     await scene.destroy();
     res.status(204).send();
