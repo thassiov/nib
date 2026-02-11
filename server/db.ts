@@ -1,8 +1,8 @@
-import { Sequelize, DataTypes, Model, Optional } from "sequelize";
+import { Sequelize, DataTypes, Model, Optional, Options } from "sequelize";
 
 // --- Sequelize instance ---
 
-const sequelize = new Sequelize({
+let sequelize = new Sequelize({
   dialect: "postgres",
   host: process.env.DB_HOST || "postgres.grid.local",
   port: parseInt(process.env.DB_PORT || "5432"),
@@ -34,42 +34,6 @@ class User extends Model<UserAttributes, UserCreationAttributes> implements User
   declare created_at: Date;
 }
 
-User.init(
-  {
-    id: {
-      type: DataTypes.UUID,
-      defaultValue: DataTypes.UUIDV4,
-      primaryKey: true,
-    },
-    sub: {
-      type: DataTypes.TEXT,
-      allowNull: false,
-      unique: true,
-    },
-    username: {
-      type: DataTypes.TEXT,
-      allowNull: false,
-    },
-    email: {
-      type: DataTypes.TEXT,
-      allowNull: true,
-    },
-    avatar_url: {
-      type: DataTypes.TEXT,
-      allowNull: true,
-    },
-    created_at: {
-      type: DataTypes.DATE,
-      defaultValue: DataTypes.NOW,
-    },
-  },
-  {
-    sequelize,
-    tableName: "users",
-    timestamps: false,
-  }
-);
-
 // --- Scene model ---
 
 interface SceneAttributes {
@@ -99,64 +63,121 @@ class Scene extends Model<SceneAttributes, SceneCreationAttributes> implements S
   declare updated_at: Date;
 }
 
-Scene.init(
-  {
-    id: {
-      type: DataTypes.UUID,
-      defaultValue: DataTypes.UUIDV4,
-      primaryKey: true,
-    },
-    user_id: {
-      type: DataTypes.UUID,
-      allowNull: true,
-      references: {
-        model: "users",
-        key: "id",
+// --- Model initialization ---
+
+function initModels(seq: Sequelize) {
+  User.init(
+    {
+      id: {
+        type: DataTypes.UUID,
+        defaultValue: DataTypes.UUIDV4,
+        primaryKey: true,
       },
-      onDelete: "CASCADE",
+      sub: {
+        type: DataTypes.TEXT,
+        allowNull: false,
+        unique: true,
+      },
+      username: {
+        type: DataTypes.TEXT,
+        allowNull: false,
+      },
+      email: {
+        type: DataTypes.TEXT,
+        allowNull: true,
+        defaultValue: null,
+      },
+      avatar_url: {
+        type: DataTypes.TEXT,
+        allowNull: true,
+        defaultValue: null,
+      },
+      created_at: {
+        type: DataTypes.DATE,
+        defaultValue: DataTypes.NOW,
+      },
     },
-    title: {
-      type: DataTypes.TEXT,
-      allowNull: false,
-      defaultValue: "Untitled",
+    {
+      sequelize: seq,
+      tableName: "users",
+      timestamps: false,
     },
-    data: {
-      type: DataTypes.JSONB,
-      allowNull: false,
-    },
-    thumbnail: {
-      type: DataTypes.TEXT,
-      allowNull: true,
-    },
-    is_public: {
-      type: DataTypes.BOOLEAN,
-      defaultValue: false,
-    },
-    created_at: {
-      type: DataTypes.DATE,
-      defaultValue: DataTypes.NOW,
-    },
-    updated_at: {
-      type: DataTypes.DATE,
-      defaultValue: DataTypes.NOW,
-    },
-  },
-  {
-    sequelize,
-    tableName: "scenes",
-    timestamps: false,
-    indexes: [
-      { fields: ["user_id"], name: "idx_scenes_user" },
-      { fields: ["is_public"], where: { is_public: true }, name: "idx_scenes_public" },
-      { fields: [{ name: "updated_at", order: "DESC" }], name: "idx_scenes_updated" },
-    ],
-  }
-);
+  );
 
-// --- Associations ---
+  Scene.init(
+    {
+      id: {
+        type: DataTypes.UUID,
+        defaultValue: DataTypes.UUIDV4,
+        primaryKey: true,
+      },
+      user_id: {
+        type: DataTypes.UUID,
+        allowNull: true,
+        references: {
+          model: "users",
+          key: "id",
+        },
+        onDelete: "CASCADE",
+      },
+      title: {
+        type: DataTypes.TEXT,
+        allowNull: false,
+        defaultValue: "Untitled",
+      },
+      data: {
+        // Use JSON for SQLite compatibility, JSONB for Postgres
+        type: seq.getDialect() === "sqlite" ? DataTypes.JSON : DataTypes.JSONB,
+        allowNull: false,
+      },
+      thumbnail: {
+        type: DataTypes.TEXT,
+        allowNull: true,
+      },
+      is_public: {
+        type: DataTypes.BOOLEAN,
+        defaultValue: false,
+      },
+      created_at: {
+        type: DataTypes.DATE,
+        defaultValue: DataTypes.NOW,
+      },
+      updated_at: {
+        type: DataTypes.DATE,
+        defaultValue: DataTypes.NOW,
+      },
+    },
+    {
+      sequelize: seq,
+      tableName: "scenes",
+      timestamps: false,
+      // Partial indexes not supported in SQLite
+      ...(seq.getDialect() !== "sqlite" && {
+        indexes: [
+          { fields: ["user_id"], name: "idx_scenes_user" },
+          { fields: ["is_public"], where: { is_public: true }, name: "idx_scenes_public" },
+          { fields: [{ name: "updated_at", order: "DESC" }], name: "idx_scenes_updated" },
+        ],
+      }),
+    },
+  );
 
-User.hasMany(Scene, { foreignKey: "user_id", as: "scenes" });
-Scene.belongsTo(User, { foreignKey: "user_id", as: "user" });
+  User.hasMany(Scene, { foreignKey: "user_id", as: "scenes" });
+  Scene.belongsTo(User, { foreignKey: "user_id", as: "user" });
+}
 
-export { sequelize, User, Scene };
+// Initialize models with the default connection
+initModels(sequelize);
+
+/**
+ * Reinitialize the database connection and models.
+ * Used by tests to swap to SQLite in-memory.
+ */
+function initDb(options: Options): Sequelize {
+  sequelize = new Sequelize(options);
+  initModels(sequelize);
+  return sequelize;
+}
+
+export { sequelize, User, Scene, initDb };
 export type { UserAttributes, UserCreationAttributes, SceneAttributes, SceneCreationAttributes };
