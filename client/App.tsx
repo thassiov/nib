@@ -1,4 +1,7 @@
 import { BrowserRouter, Routes, Route } from "react-router-dom";
+import { AuthProvider } from "./contexts/AuthContext";
+import { ProtectedRoute } from "./components/ProtectedRoute";
+import { NavBar } from "./components/NavBar";
 import { Gallery } from "./pages/Gallery";
 import { MyDrawings } from "./pages/MyDrawings";
 import { Editor } from "./pages/Editor";
@@ -6,13 +9,30 @@ import { Editor } from "./pages/Editor";
 export function App() {
   return (
     <BrowserRouter>
-      <Routes>
-        <Route path="/" element={<Gallery />} />
-        <Route path="/gallery" element={<Gallery />} />
-        <Route path="/my" element={<MyDrawings />} />
-        <Route path="/drawing/new" element={<Editor />} />
-        <Route path="/drawing/:id" element={<Editor />} />
-      </Routes>
+      <AuthProvider>
+        <NavBar />
+        <Routes>
+          <Route path="/" element={<Gallery />} />
+          <Route path="/gallery" element={<Gallery />} />
+          <Route
+            path="/my"
+            element={
+              <ProtectedRoute>
+                <MyDrawings />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/drawing/new"
+            element={
+              <ProtectedRoute>
+                <Editor />
+              </ProtectedRoute>
+            }
+          />
+          <Route path="/drawing/:id" element={<Editor />} />
+        </Routes>
+      </AuthProvider>
     </BrowserRouter>
   );
 }
