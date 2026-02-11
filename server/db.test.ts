@@ -83,6 +83,21 @@ describe("Database models", () => {
       const scene = await SceneModel.create({ user_id: userId, data: {}, is_public: true });
       expect(scene.is_public).toBe(true);
     });
+
+    it("allows null user_id (anonymous scene)", async () => {
+      const scene = await SceneModel.create({ user_id: null, data: { elements: [] }, title: "Anon" });
+      expect(scene.id).toBeDefined();
+      expect(scene.user_id).toBeNull();
+      expect(scene.title).toBe("Anon");
+    });
+
+    it("anonymous scene has no user association", async () => {
+      const scene = await SceneModel.create({ user_id: null, data: {} });
+      const sceneWithUser = await SceneModel.findByPk(scene.id, {
+        include: [{ model: UserModel, as: "user" }],
+      });
+      expect((sceneWithUser as any).user).toBeNull();
+    });
   });
 
   // ========== Associations ==========

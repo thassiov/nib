@@ -318,4 +318,187 @@ describe("Scene routes", () => {
       expect(res.status).toBe(404);
     });
   });
+
+  // ========== Upload (authenticated) ==========
+
+  describe("POST /api/scenes/upload (authenticated)", () => {
+    it("creates scene from uploaded .excalidraw file", async () => {
+      app = await createAuthenticatedTestApp({ userId: ALICE_ID });
+      await seedAlice(app);
+
+      const res = await request(app.getHttpServer())
+        .post("/api/scenes/upload")
+        .attach("file", Buffer.from(JSON.stringify(VALID_SCENE)), "my-drawing.excalidraw");
+
+      expect(res.status).toBe(201);
+      expect(res.body.id).toBeDefined();
+      expect(res.body.title).toBe("my-drawing");
+      expect(res.body.user_id).toBe(ALICE_ID);
+      expect(res.body.is_public).toBe(false);
+    });
+
+    it("defaults is_public to false when authenticated", async () => {
+      app = await createAuthenticatedTestApp({ userId: ALICE_ID });
+      await seedAlice(app);
+
+      const res = await request(app.getHttpServer())
+        .post("/api/scenes/upload")
+        .attach("file", Buffer.from(JSON.stringify(VALID_SCENE)), "drawing.excalidraw");
+
+      expect(res.status).toBe(201);
+      expect(res.body.is_public).toBe(false);
+    });
+
+    it("allows authenticated user to override is_public to true", async () => {
+      app = await createAuthenticatedTestApp({ userId: ALICE_ID });
+      await seedAlice(app);
+
+      const res = await request(app.getHttpServer())
+        .post("/api/scenes/upload")
+        .field("is_public", "true")
+        .attach("file", Buffer.from(JSON.stringify(VALID_SCENE)), "drawing.excalidraw");
+
+      expect(res.status).toBe(201);
+      expect(res.body.is_public).toBe(true);
+    });
+
+    it("accepts .json file extension", async () => {
+      app = await createAuthenticatedTestApp({ userId: ALICE_ID });
+      await seedAlice(app);
+
+      const res = await request(app.getHttpServer())
+        .post("/api/scenes/upload")
+        .attach("file", Buffer.from(JSON.stringify(VALID_SCENE)), "scene.json");
+
+      expect(res.status).toBe(201);
+      expect(res.body.title).toBe("scene");
+    });
+
+    it("uses provided title instead of filename", async () => {
+      app = await createAuthenticatedTestApp({ userId: ALICE_ID });
+      await seedAlice(app);
+
+      const res = await request(app.getHttpServer())
+        .post("/api/scenes/upload")
+        .field("title", "Custom Title")
+        .attach("file", Buffer.from(JSON.stringify(VALID_SCENE)), "drawing.excalidraw");
+
+      expect(res.status).toBe(201);
+      expect(res.body.title).toBe("Custom Title");
+    });
+
+    it("strips file extension from default title", async () => {
+      app = await createAuthenticatedTestApp({ userId: ALICE_ID });
+      await seedAlice(app);
+
+      const res = await request(app.getHttpServer())
+        .post("/api/scenes/upload")
+        .attach("file", Buffer.from(JSON.stringify(VALID_SCENE)), "project-sketch.excalidraw");
+
+      expect(res.status).toBe(201);
+      expect(res.body.title).toBe("project-sketch");
+    });
+  });
+
+  // ========== Upload (anonymous) ==========
+
+  describe("POST /api/scenes/upload (anonymous)", () => {
+    it("creates scene without authentication", async () => {
+      app = await createTestApp();
+
+      const res = await request(app.getHttpServer())
+        .post("/api/scenes/upload")
+        .attach("file", Buffer.from(JSON.stringify(VALID_SCENE)), "anon-drawing.excalidraw");
+
+      expect(res.status).toBe(201);
+      expect(res.body.id).toBeDefined();
+      expect(res.body.title).toBe("anon-drawing");
+    });
+
+    it("sets user_id to null for anonymous uploads", async () => {
+      app = await createTestApp();
+
+      const res = await request(app.getHttpServer())
+        .post("/api/scenes/upload")
+        .attach("file", Buffer.from(JSON.stringify(VALID_SCENE)), "drawing.excalidraw");
+
+      expect(res.status).toBe(201);
+      expect(res.body.user_id).toBeNull();
+    });
+
+    it("defaults is_public to true for anonymous uploads", async () => {
+      app = await createTestApp();
+
+      const res = await request(app.getHttpServer())
+        .post("/api/scenes/upload")
+        .attach("file", Buffer.from(JSON.stringify(VALID_SCENE)), "drawing.excalidraw");
+
+      expect(res.status).toBe(201);
+      expect(res.body.is_public).toBe(true);
+    });
+
+    it("allows anonymous user to override is_public to false", async () => {
+      app = await createTestApp();
+
+      const res = await request(app.getHttpServer())
+        .post("/api/scenes/upload")
+        .field("is_public", "false")
+        .attach("file", Buffer.from(JSON.stringify(VALID_SCENE)), "drawing.excalidraw");
+
+      expect(res.status).toBe(201);
+      expect(res.body.is_public).toBe(false);
+    });
+
+    it("anonymous scene appears in public gallery", async () => {
+      app = await createTestApp();
+
+      await request(app.getHttpServer())
+        .post("/api/scenes/upload")
+        .attach("file", Buffer.from(JSON.stringify(VALID_SCENE)), "public-drawing.excalidraw");
+
+      const res = await request(app.getHttpServer()).get("/api/scenes");
+      expect(res.status).toBe(200);
+      expect(res.body.scenes.length).toBe(1);
+      expect(res.body.scenes[0].title).toBe("public-drawing");
+    });
+  });
+
+  // ========== Upload (error cases) ==========
+
+  describe("POST /api/scenes/upload (errors)", () => {
+    it("returns 400 when no file is provided", async () => {
+      app = await createTestApp();
+
+      const res = await request(app.getHttpServer())
+        .post("/api/scenes/upload")
+        .field("title", "No file");
+
+      expect(res.status).toBe(400);
+      expect(res.body.error).toMatch(/no file/i);
+    });
+
+    it("returns 400 for non-JSON file content", async () => {
+      app = await createTestApp();
+
+      const res = await request(app.getHttpServer())
+        .post("/api/scenes/upload")
+        .attach("file", Buffer.from("this is not json"), "drawing.excalidraw");
+
+      expect(res.status).toBe(400);
+      expect(res.body.error).toMatch(/not valid json/i);
+    });
+
+    it("returns 422 for invalid scene data in file", async () => {
+      app = await createTestApp();
+
+      const invalidScene = { elements: "not-an-array" };
+      const res = await request(app.getHttpServer())
+        .post("/api/scenes/upload")
+        .attach("file", Buffer.from(JSON.stringify(invalidScene)), "bad.excalidraw");
+
+      expect(res.status).toBe(422);
+      expect(res.body.error).toMatch(/invalid scene/i);
+      expect(res.body.validation).toBeDefined();
+    });
+  });
 });

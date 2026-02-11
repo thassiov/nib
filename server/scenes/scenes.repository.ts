@@ -59,7 +59,7 @@ export class ScenesRepository {
     title: string;
     data: object;
     is_public: boolean;
-    user_id: string;
+    user_id: string | null;
   }): Promise<SceneModel> {
     return this.sceneModel.create(data);
   }
