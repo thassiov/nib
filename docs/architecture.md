@@ -110,7 +110,8 @@ Validation runs on create and update. The standalone `POST /api/scenes/validate`
 - `GET /api/scenes` — Public gallery, paginated
 - `GET /api/scenes/my` — User's own scenes (requires auth)
 - `GET /api/scenes/:id` — Single scene (respects visibility)
-- `POST /api/scenes` — Create scene (requires auth)
+- `POST /api/scenes` — Create scene from JSON (requires auth)
+- `POST /api/scenes/upload` — Upload `.excalidraw`/`.json` file (auth optional, see below)
 - `POST /api/scenes/validate` — Validate scene data without saving
 - `PUT /api/scenes/:id` — Update scene (requires auth + ownership)
 - `DELETE /api/scenes/:id` — Delete scene (requires auth + ownership)
@@ -123,6 +124,20 @@ Features:
 - Ownership enforcement on update/delete (403 for non-owners)
 - Private scenes return 404 to non-owners (no information leakage)
 - Partial updates supported (any combination of title, data, is_public, thumbnail)
+
+### Anonymous uploads
+
+The `POST /api/scenes/upload` endpoint works with or without authentication, making it usable from CLI tools like `curl` without needing OIDC session cookies.
+
+| | Authenticated | Anonymous |
+|---|---|---|
+| `user_id` | Session user | `null` |
+| `is_public` default | `false` (private) | `true` (public) |
+| `is_public` override | Yes, via form field | Yes, via form field |
+
+The `user_id` column on `SceneModel` is nullable, so anonymous scenes are valid at the data model level. Anonymous scenes appear in the public gallery but have no owner — they cannot be edited or deleted via the API (no one has ownership).
+
+The JSON create endpoint (`POST /api/scenes`) still requires authentication since it's the in-app editor path where a session always exists.
 
 ### Dependency injection note
 

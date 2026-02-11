@@ -131,8 +131,8 @@ All test files run sequentially in a single fork (`isolate: false`) because serv
 | File | Tests | What it covers |
 |---|---|---|
 | `server/services/validator.test.ts` | 26 | Excalidraw scene structural validation |
-| `server/db.test.ts` | 11 | Model creation, associations, cascade delete |
-| `server/scenes/scenes.test.ts` | 26 | Full scene API (CRUD, auth, pagination, validation) |
+| `server/db.test.ts` | 13 | Model creation, associations, cascade delete, anonymous scenes |
+| `server/scenes/scenes.test.ts` | 40 | Scene CRUD, file upload (authenticated + anonymous), validation |
 | `server/auth/guards/auth.guard.test.ts` | 3 | Auth guard (authenticated, unauthenticated, public) |
 | `client/__tests__/AuthContext.test.tsx` | 6 | Client-side auth state management |
 
