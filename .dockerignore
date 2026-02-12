@@ -1,0 +1,13 @@
+node_modules/
+dist/
+.git/
+.env
+*.log
+*.md
+.gitignore
+vitest.config.ts
+tsconfig.json
+tsconfig.server.json
+**/*.test.ts
+**/*.test.tsx
+**/__tests__/

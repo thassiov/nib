@@ -1,0 +1,44 @@
+services:
+  nib:
+    build: .
+    ports:
+      - "3000:3000"
+    environment:
+      NODE_ENV: production
+      PORT: "3000"
+      SESSION_SECRET: ${SESSION_SECRET:?Set SESSION_SECRET in .env}
+      DB_HOST: postgres
+      DB_PORT: "5432"
+      DB_NAME: nib
+      DB_USER: nib
+      DB_PASS: ${DB_PASS:?Set DB_PASS in .env}
+      OIDC_ISSUER: ${OIDC_ISSUER:-https://authelia.grid.local}
+      OIDC_CLIENT_ID: ${OIDC_CLIENT_ID:-nib}
+      OIDC_CLIENT_SECRET: ${OIDC_CLIENT_SECRET:?Set OIDC_CLIENT_SECRET in .env}
+      OIDC_REDIRECT_URI: ${OIDC_REDIRECT_URI:-http://localhost:3000/auth/callback}
+      OIDC_POST_LOGOUT_URI: ${OIDC_POST_LOGOUT_URI:-http://localhost:3000}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: nib
+      POSTGRES_USER: nib
+      POSTGRES_PASSWORD: ${DB_PASS:?Set DB_PASS in .env}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./migrations/001_initial.sql:/docker-entrypoint-initdb.d/001_initial.sql:ro
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U nib -d nib"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    restart: unless-stopped
+
+volumes:
+  pgdata:
