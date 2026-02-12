@@ -18,10 +18,10 @@ describe("Health endpoint", () => {
 
     const res = await request(app.getHttpServer()).get("/api/health");
     expect(res.status).toBe(200);
-    expect(res.body).toEqual({
-      status: "ok",
-      service: "nib",
-      db: "connected",
-    });
+    expect(res.body.status).toBe("ok");
+    expect(res.body.service).toBe("nib");
+    expect(res.body.db).toBe("connected");
+    // oidc will be "unreachable" in tests (no Authelia running)
+    expect(res.body.oidc).toBe("unreachable");
   });
 });
