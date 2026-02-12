@@ -5,9 +5,8 @@ dist/
 *.log
 *.md
 .gitignore
+.dockerignore
 vitest.config.ts
-tsconfig.json
-tsconfig.server.json
 **/*.test.ts
 **/*.test.tsx
 **/__tests__/
