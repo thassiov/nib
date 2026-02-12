@@ -60,6 +60,7 @@ export class ScenesRepository {
     data: object;
     is_public: boolean;
     user_id: string | null;
+    thumbnail?: string;
   }): Promise<SceneModel> {
     return this.sceneModel.create(data);
   }

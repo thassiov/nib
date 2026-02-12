@@ -488,7 +488,7 @@ describe("Scene routes", () => {
       expect(res.body.error).toMatch(/not valid json/i);
     });
 
-    it("returns 422 for invalid scene data in file", async () => {
+     it("returns 422 for invalid scene data in file", async () => {
       app = await createTestApp();
 
       const invalidScene = { elements: "not-an-array" };
@@ -499,6 +499,63 @@ describe("Scene routes", () => {
       expect(res.status).toBe(422);
       expect(res.body.error).toMatch(/invalid scene/i);
       expect(res.body.validation).toBeDefined();
+    });
+  });
+
+  // ========== Thumbnail ==========
+
+  describe("Thumbnail support", () => {
+    const THUMB = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUg==";
+
+    it("stores thumbnail on create", async () => {
+      app = await createAuthenticatedTestApp({ userId: ALICE_ID });
+      await seedAlice(app);
+
+      const res = await request(app.getHttpServer())
+        .post("/api/scenes")
+        .send({ title: "With Thumb", data: VALID_SCENE, thumbnail: THUMB });
+
+      expect(res.status).toBe(201);
+      expect(res.body.thumbnail).toBe(THUMB);
+    });
+
+    it("stores thumbnail on update", async () => {
+      app = await createAuthenticatedTestApp({ userId: ALICE_ID });
+      await seedAlice(app);
+      const scene = await getSceneModel(app).create({
+        user_id: ALICE_ID, title: "No Thumb", data: VALID_SCENE, is_public: false,
+      });
+
+      const res = await request(app.getHttpServer())
+        .put(`/api/scenes/${scene.id}`)
+        .send({ thumbnail: THUMB });
+
+      expect(res.status).toBe(200);
+      expect(res.body.thumbnail).toBe(THUMB);
+    });
+
+    it("returns thumbnail in list responses", async () => {
+      app = await createAuthenticatedTestApp({ userId: ALICE_ID });
+      await seedAlice(app);
+      await getSceneModel(app).create({
+        user_id: ALICE_ID, title: "Listed", data: VALID_SCENE, is_public: true, thumbnail: THUMB,
+      });
+
+      const res = await request(app.getHttpServer()).get("/api/scenes");
+      expect(res.status).toBe(200);
+      expect(res.body.scenes[0].thumbnail).toBe(THUMB);
+    });
+
+    it("defaults thumbnail to null when not provided", async () => {
+      app = await createAuthenticatedTestApp({ userId: ALICE_ID });
+      await seedAlice(app);
+
+      const res = await request(app.getHttpServer())
+        .post("/api/scenes")
+        .send({ title: "No Thumb", data: VALID_SCENE });
+
+      expect(res.status).toBe(201);
+      expect(res.body.thumbnail ?? null).toBeNull();
     });
   });
 });

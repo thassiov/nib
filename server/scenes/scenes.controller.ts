@@ -181,10 +181,10 @@ export class ScenesController {
   @UseGuards(AuthGuard)
   async create(@Body() body: any, @Req() req: Request, @Res() res: Response) {
     const session = (req as any).session;
-    const { title, data, is_public } = body;
+    const { title, data, is_public, thumbnail } = body;
 
     const result = await this.scenesService.create(
-      { title, data, is_public },
+      { title, data, is_public, thumbnail },
       session.userId,
     );
 

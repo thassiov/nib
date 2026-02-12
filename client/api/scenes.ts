@@ -97,6 +97,7 @@ export async function createScene(data: {
   title?: string;
   data: object;
   is_public?: boolean;
+  thumbnail?: string;
 }): Promise<SceneDetail> {
   return apiFetch("/api/scenes", {
     method: "POST",

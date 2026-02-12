@@ -12,4 +12,8 @@ export class CreateSceneDto {
   @IsOptional()
   @IsBoolean()
   is_public?: boolean;
+
+  @IsOptional()
+  @IsString()
+  thumbnail?: string;
 }

@@ -79,7 +79,7 @@ export class ScenesService {
    * Create a new scene after validation.
    */
   async create(
-    data: { title?: string; data: object; is_public?: boolean },
+    data: { title?: string; data: object; is_public?: boolean; thumbnail?: string },
     userId?: string,
   ): Promise<{ scene?: SceneModel; validation?: any }> {
     const validation = this.sceneValidator.validateScene(data.data);
@@ -92,6 +92,7 @@ export class ScenesService {
       data: data.data,
       is_public: data.is_public ?? false,
       user_id: userId ?? null,
+      ...(data.thumbnail && { thumbnail: data.thumbnail }),
     });
 
     return { scene };

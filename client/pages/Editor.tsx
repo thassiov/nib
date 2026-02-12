@@ -1,6 +1,6 @@
 import { useState, useCallback, useRef, useEffect } from "react";
 import { useParams, useNavigate } from "react-router-dom";
-import { Excalidraw, MainMenu } from "@excalidraw/excalidraw";
+import { Excalidraw, MainMenu, exportToBlob } from "@excalidraw/excalidraw";
 import "@excalidraw/excalidraw/index.css";
 import type { ExcalidrawImperativeAPI } from "@excalidraw/excalidraw/types";
 import { useAuth } from "../contexts/AuthContext";
@@ -90,6 +90,39 @@ export function Editor() {
     return currentElements !== lastSyncedElementsRef.current;
   }, []);
 
+  // Generate a small PNG thumbnail as a base64 data URL
+  const generateThumbnail = useCallback(async (): Promise<string | null> => {
+    const currentApi = apiRef.current;
+    if (!currentApi) return null;
+
+    const elements = currentApi.getSceneElements();
+    // Skip if canvas is empty (no non-deleted elements)
+    if (!elements.length || elements.every((el: any) => el.isDeleted)) return null;
+
+    try {
+      const blob = await exportToBlob({
+        elements,
+        appState: {
+          ...currentApi.getAppState(),
+          exportWithDarkMode: false,
+          exportBackground: true,
+        },
+        files: currentApi.getFiles(),
+        maxWidthOrHeight: 300,
+      });
+
+      return new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result as string);
+        reader.onerror = reject;
+        reader.readAsDataURL(blob);
+      });
+    } catch (err) {
+      console.error("Thumbnail generation failed:", err);
+      return null;
+    }
+  }, []);
+
   // Core save function
   const doSave = useCallback(async () => {
     const currentApi = apiRef.current;
@@ -100,10 +133,11 @@ export function Editor() {
 
     setSaving(true);
     try {
+      const thumbnail = await generateThumbnail();
       if (sceneIdRef.current) {
-        await updateScene(sceneIdRef.current, { data: sceneData });
+        await updateScene(sceneIdRef.current, { data: sceneData, ...(thumbnail && { thumbnail }) });
       } else {
-        const created = await createScene({ title, data: sceneData });
+        const created = await createScene({ title, data: sceneData, ...(thumbnail && { thumbnail }) });
         sceneIdRef.current = created.id;
         setScene(created);
         navigate(`/drawing/${created.id}`, { replace: true });
@@ -115,13 +149,13 @@ export function Editor() {
     } finally {
       setSaving(false);
     }
-  }, [readOnly, title, navigate, getSceneData]);
+  }, [readOnly, title, navigate, getSceneData, generateThumbnail]);
 
   // 5-second sync interval
   useEffect(() => {
     if (readOnly) return;
 
-    const interval = setInterval(() => {
+    const interval = setInterval(async () => {
       // Only sync if we have a scene ID (saved at least once) and content is dirty
       if (sceneIdRef.current && isDirty()) {
         const currentApi = apiRef.current;
@@ -133,21 +167,21 @@ export function Editor() {
           files: currentApi.getFiles(),
         };
 
-        updateScene(sceneIdRef.current, { data: sceneData })
-          .then(() => {
-            lastSyncedElementsRef.current = currentApi.getSceneElements();
-            setLastSaved(new Date());
-          })
-          .catch((err) => {
-            console.error("Autosave failed:", err);
-          });
+        try {
+          const thumbnail = await generateThumbnail();
+          await updateScene(sceneIdRef.current!, { data: sceneData, ...(thumbnail && { thumbnail }) });
+          lastSyncedElementsRef.current = currentApi.getSceneElements();
+          setLastSaved(new Date());
+        } catch (err) {
+          console.error("Autosave failed:", err);
+        }
       }
     }, SYNC_INTERVAL_MS);
 
     return () => clearInterval(interval);
-  }, [readOnly, isDirty]);
+  }, [readOnly, isDirty, generateThumbnail]);
 
-  // Flush on unmount if dirty
+  // Flush on unmount if dirty (fire-and-forget, best-effort thumbnail)
   useEffect(() => {
     return () => {
       const currentApi = apiRef.current;
@@ -157,17 +191,26 @@ export function Editor() {
         const dirty = !lastSynced || currentElements !== lastSynced;
 
         if (dirty) {
-          updateScene(sceneIdRef.current, {
-            data: {
-              elements: currentElements,
-              appState: currentApi.getAppState(),
-              files: currentApi.getFiles(),
-            },
-          }).catch(() => {});
+          const sceneId = sceneIdRef.current;
+          const sceneData = {
+            elements: currentElements,
+            appState: currentApi.getAppState(),
+            files: currentApi.getFiles(),
+          };
+
+          // Try to generate thumbnail, but don't block the save
+          generateThumbnail()
+            .then((thumbnail) => {
+              updateScene(sceneId, { data: sceneData, ...(thumbnail && { thumbnail }) }).catch(() => {});
+            })
+            .catch(() => {
+              // Thumbnail failed (canvas gone), save without it
+              updateScene(sceneId, { data: sceneData }).catch(() => {});
+            });
         }
       }
     };
-  }, []);
+  }, [generateThumbnail]);
 
   // Manual save (flush now)
   const handleSave = useCallback(() => {
@@ -182,10 +225,12 @@ export function Editor() {
     setSaving(true);
     try {
       const cloneTitle = `Copy of ${title}`;
+      const thumbnail = await generateThumbnail();
       const created = await createScene({
         title: cloneTitle,
         data: sceneData,
         is_public: false,
+        ...(thumbnail && { thumbnail }),
       });
       navigate(`/drawing/${created.id}`);
     } catch (err) {
@@ -193,7 +238,7 @@ export function Editor() {
     } finally {
       setSaving(false);
     }
-  }, [getSceneData, title, navigate]);
+  }, [getSceneData, title, navigate, generateThumbnail]);
 
   // Upload New — opens file picker, creates new scene from file, navigates
   const handleUploadNew = useCallback(() => {
