@@ -6,6 +6,7 @@ import type { ExcalidrawImperativeAPI } from "@excalidraw/excalidraw/types";
 import { useAuth } from "../contexts/AuthContext";
 import { getScene, createScene, updateScene } from "../api/scenes";
 import type { SceneDetail } from "../api/scenes";
+import { logger } from "../api/logger";
 
 const SYNC_INTERVAL_MS = 5000;
 
@@ -56,11 +57,13 @@ export function Editor() {
         setIsPublic(data.is_public);
         sceneIdRef.current = data.id;
         setLoading(false);
+        logger.info("Editor: scene loaded", { id: data.id, title: data.title });
       })
       .catch((err) => {
         if (cancelled) return;
         setError(err.status === 404 ? "Drawing not found" : "Failed to load drawing");
         setLoading(false);
+        logger.error("Editor: failed to load scene", { id, status: err.status });
       });
 
     return () => {
@@ -118,7 +121,7 @@ export function Editor() {
         reader.readAsDataURL(blob);
       });
     } catch (err) {
-      console.error("Thumbnail generation failed:", err);
+      logger.error("Editor: thumbnail generation failed", { error: String(err) });
       return null;
     }
   }, []);
@@ -144,8 +147,9 @@ export function Editor() {
       }
       lastSyncedElementsRef.current = currentApi.getSceneElements();
       setLastSaved(new Date());
+      logger.info("Editor: scene saved", { id: sceneIdRef.current });
     } catch (err) {
-      console.error("Save failed:", err);
+      logger.error("Editor: save failed", { error: String(err) });
     } finally {
       setSaving(false);
     }
@@ -172,8 +176,9 @@ export function Editor() {
           await updateScene(sceneIdRef.current!, { data: sceneData, ...(thumbnail && { thumbnail }) });
           lastSyncedElementsRef.current = currentApi.getSceneElements();
           setLastSaved(new Date());
+          logger.info("Editor: autosaved", { id: sceneIdRef.current });
         } catch (err) {
-          console.error("Autosave failed:", err);
+          logger.error("Editor: autosave failed", { error: String(err) });
         }
       }
     }, SYNC_INTERVAL_MS);
@@ -233,8 +238,9 @@ export function Editor() {
         ...(thumbnail && { thumbnail }),
       });
       navigate(`/drawing/${created.id}`);
+      logger.info("Editor: scene cloned", { id: created.id, title: cloneTitle });
     } catch (err) {
-      console.error("Clone failed:", err);
+      logger.error("Editor: clone failed", { error: String(err) });
     } finally {
       setSaving(false);
     }
@@ -268,11 +274,12 @@ export function Editor() {
           data: parsed as object,
         });
         navigate(`/drawing/${created.id}`);
+        logger.info("Editor: uploaded new scene", { id: created.id, title: uploadTitle });
       } catch (err: any) {
         if (err.status === 422) {
           alert("Invalid Excalidraw file: the scene data failed validation");
         } else {
-          console.error("Upload failed:", err);
+          logger.error("Editor: upload failed", { error: String(err) });
           alert("Upload failed");
         }
       } finally {
@@ -291,8 +298,9 @@ export function Editor() {
     try {
       await updateScene(sceneIdRef.current, { is_public: newValue });
       setIsPublic(newValue);
+      logger.info("Editor: visibility changed", { id: sceneIdRef.current, is_public: newValue });
     } catch (err) {
-      console.error("Visibility update failed:", err);
+      logger.error("Editor: visibility update failed", { error: String(err) });
     }
   }, [isPublic, readOnly]);
 
@@ -301,8 +309,9 @@ export function Editor() {
     if (sceneIdRef.current && !readOnly) {
       try {
         await updateScene(sceneIdRef.current, { title });
+        logger.info("Editor: title updated", { id: sceneIdRef.current, title });
       } catch (err) {
-        console.error("Title update failed:", err);
+        logger.error("Editor: title update failed", { error: String(err) });
       }
     }
   }, [title, readOnly]);

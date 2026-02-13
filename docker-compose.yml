@@ -5,6 +5,7 @@ services:
       - "3000:3000"
     environment:
       NODE_ENV: production
+      NODE_TLS_REJECT_UNAUTHORIZED: "${NODE_TLS_REJECT_UNAUTHORIZED:-0}"
       PORT: "3000"
       SESSION_SECRET: ${SESSION_SECRET:?Set SESSION_SECRET in .env}
       DB_HOST: postgres
@@ -17,6 +18,7 @@ services:
       OIDC_CLIENT_SECRET: ${OIDC_CLIENT_SECRET:?Set OIDC_CLIENT_SECRET in .env}
       OIDC_REDIRECT_URI: ${OIDC_REDIRECT_URI:-http://localhost:3000/auth/callback}
       OIDC_POST_LOGOUT_URI: ${OIDC_POST_LOGOUT_URI:-http://localhost:3000}
+      COOKIE_SECURE: "${COOKIE_SECURE:-false}"
     depends_on:
       postgres:
         condition: service_healthy

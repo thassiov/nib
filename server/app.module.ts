@@ -22,7 +22,7 @@ if (process.env.NODE_ENV === "production") {
   imports.push(
     ServeStaticModule.forRoot({
       rootPath: join(__dirname, "..", "client"),
-      exclude: ["/api/(.*)", "/auth/(.*)"],
+      exclude: ["/api/{*path}", "/auth/{*path}"],
     }),
   );
 }

@@ -1,8 +1,19 @@
+import { useState, useEffect } from "react";
 import { Link } from "react-router-dom";
 import { useAuth } from "../contexts/AuthContext";
+import { logger } from "../api/logger";
 
 export function NavBar() {
   const { user, loading, login, logout } = useAuth();
+  const [logsEnabled, setLogsEnabled] = useState(logger.isEnabled());
+
+  useEffect(() => {
+    return logger.onToggle(setLogsEnabled);
+  }, []);
+
+  const toggleLogs = () => {
+    logger.setEnabled(!logsEnabled);
+  };
 
   return (
     <nav style={styles.nav}>
@@ -13,6 +24,16 @@ export function NavBar() {
       </div>
 
       <div style={styles.right}>
+        <button
+          onClick={toggleLogs}
+          style={{
+            ...styles.logToggle,
+            color: logsEnabled ? "#2e7d32" : "#999",
+          }}
+          title={logsEnabled ? "Remote logging: ON" : "Remote logging: OFF"}
+        >
+          {logsEnabled ? "Logs ON" : "Logs OFF"}
+        </button>
         {loading ? null : user ? (
           <div style={styles.userArea}>
             <span style={styles.username}>{user.username}</span>
@@ -72,5 +93,15 @@ const styles: Record<string, React.CSSProperties> = {
     borderRadius: 4,
     backgroundColor: "#fff",
     cursor: "pointer",
+  },
+  logToggle: {
+    padding: "4px 8px",
+    fontSize: 11,
+    fontFamily: "monospace",
+    border: "1px solid #ddd",
+    borderRadius: 4,
+    backgroundColor: "#fafafa",
+    cursor: "pointer",
+    marginRight: 12,
   },
 };

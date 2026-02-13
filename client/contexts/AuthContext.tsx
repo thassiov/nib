@@ -1,4 +1,5 @@
 import { createContext, useContext, useState, useEffect, useCallback, type ReactNode } from "react";
+import { logger } from "../api/logger.js";
 
 export interface User {
   id: string;
@@ -31,11 +32,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (res.ok) {
         const data = await res.json();
         setUser(data);
+        logger.info("Auth: user authenticated", { username: data.username });
       } else {
         setUser(null);
+        logger.info("Auth: not authenticated");
       }
-    } catch {
+    } catch (err) {
       setUser(null);
+      logger.error("Auth: failed to fetch user", { error: String(err) });
     } finally {
       setLoading(false);
     }
