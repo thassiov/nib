@@ -19,6 +19,8 @@ declare module "express-session" {
     role?: string;
     /** Scene IDs created in this session (anonymous ownership) */
     ownedScenes?: string[];
+    /** Page to redirect back to after OIDC login */
+    returnTo?: string;
     /** ID token for logout hint */
     idToken?: string;
   }

@@ -291,6 +291,18 @@ export function Editor() {
     if (!id || readOnly) return;
 
     const newValue = !isPublic;
+
+    // Anonymous users trying to make private: suggest login instead
+    if (!user && !newValue) {
+      const shouldLogin = window.confirm(
+        "To make a drawing private, you need an account. " +
+        "Logging in will also save your existing drawings to your account.\n\n" +
+        "Would you like to log in?"
+      );
+      if (shouldLogin) login();
+      return;
+    }
+
     try {
       await updateScene(id, { is_public: newValue });
       setIsPublic(newValue);
@@ -298,7 +310,7 @@ export function Editor() {
     } catch (err) {
       logger.error("Editor: visibility update failed", { error: String(err) });
     }
-  }, [id, isPublic, readOnly]);
+  }, [id, isPublic, readOnly, user, login]);
 
   const handleTitleSubmit = useCallback(async () => {
     setEditingTitle(false);

@@ -1,13 +1,15 @@
-import { Controller, Get, Inject, Req, Res } from "@nestjs/common";
+import { Controller, Get, Inject, Req, Res, forwardRef } from "@nestjs/common";
 import type { Request, Response } from "express";
 import { AuthService } from "./auth.service.js";
 import { UsersService } from "../users/users.service.js";
+import { ScenesRepository } from "../scenes/scenes.repository.js";
 
 @Controller("auth")
 export class AuthController {
   constructor(
     @Inject(AuthService) private readonly authService: AuthService,
     @Inject(UsersService) private readonly usersService: UsersService,
+    @Inject(forwardRef(() => ScenesRepository)) private readonly scenesRepository: ScenesRepository,
   ) {}
 
   /**
@@ -22,6 +24,12 @@ export class AuthController {
 
       session.code_verifier = code_verifier;
       session.oidc_state = state;
+
+      // Preserve the page the user was on so we can redirect back after login
+      const returnTo = req.query.returnTo as string | undefined;
+      if (returnTo && returnTo.startsWith("/")) {
+        session.returnTo = returnTo;
+      }
 
       session.save((err: Error | null) => {
         if (err) {
@@ -87,13 +95,30 @@ export class AuthController {
       session.role = user.role;
       session.idToken = idToken;
 
+      // Adopt any anonymous scenes created in this session
+      if (session.ownedScenes?.length) {
+        try {
+          const adopted = await this.scenesRepository.adoptByIds(session.ownedScenes, user.id);
+          if (adopted > 0) {
+            console.log(`Adopted ${adopted} anonymous scene(s) for user ${username}`);
+          }
+        } catch (err) {
+          console.error("Failed to adopt anonymous scenes:", err);
+        }
+        delete session.ownedScenes;
+      }
+
+      // Redirect back to where the user was before login
+      const returnTo = session.returnTo || "/";
+      delete session.returnTo;
+
       session.save((err: Error | null) => {
         if (err) {
           console.error("Session save error:", err);
           res.status(500).json({ error: "Session error" });
           return;
         }
-        res.redirect("/");
+        res.redirect(returnTo);
       });
     } catch (err) {
       console.error("OIDC callback error:", err);

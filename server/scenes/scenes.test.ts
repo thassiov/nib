@@ -5,6 +5,7 @@ import { getConnectionToken } from "@nestjs/sequelize";
 import { Sequelize } from "sequelize-typescript";
 import { UserModel } from "../database/models/user.model.js";
 import { SceneModel } from "../database/models/scene.model.js";
+import { ScenesRepository } from "./scenes.repository.js";
 import { createTestApp, createAuthenticatedTestApp, VALID_SCENE } from "../__tests__/helpers.js";
 
 // Fixed UUIDs for deterministic tests
@@ -703,6 +704,109 @@ describe("Scene routes", () => {
 
       expect(res.status).toBe(201);
       expect(res.body.thumbnail ?? null).toBeNull();
+    });
+  });
+
+  // ========== Scene adoption on login ==========
+
+  describe("Scene adoption (adoptByIds)", () => {
+    it("adopts orphaned scenes for a user", async () => {
+      app = await createTestApp();
+      await seedAlice(app);
+      const SceneModelRef = getSceneModel(app);
+      const repo = app.get(ScenesRepository);
+
+      // Create two orphaned scenes (anonymous)
+      const s1 = await SceneModelRef.create({ title: "Anon 1", data: VALID_SCENE, is_public: true, user_id: null });
+      const s2 = await SceneModelRef.create({ title: "Anon 2", data: VALID_SCENE, is_public: true, user_id: null });
+
+      const adopted = await repo.adoptByIds([s1.id, s2.id], ALICE_ID);
+      expect(adopted).toBe(2);
+
+      // Verify scenes now belong to Alice
+      const updated1 = await SceneModelRef.findByPk(s1.id);
+      const updated2 = await SceneModelRef.findByPk(s2.id);
+      expect(updated1!.user_id).toBe(ALICE_ID);
+      expect(updated2!.user_id).toBe(ALICE_ID);
+    });
+
+    it("does not adopt scenes that already have an owner", async () => {
+      app = await createTestApp();
+      await seedAlice(app);
+      await seedBob(app);
+      const SceneModelRef = getSceneModel(app);
+      const repo = app.get(ScenesRepository);
+
+      // Create a scene owned by Bob
+      const bobScene = await SceneModelRef.create({ title: "Bob's", data: VALID_SCENE, is_public: true, user_id: BOB_ID });
+
+      const adopted = await repo.adoptByIds([bobScene.id], ALICE_ID);
+      expect(adopted).toBe(0);
+
+      // Verify scene still belongs to Bob
+      const updated = await SceneModelRef.findByPk(bobScene.id);
+      expect(updated!.user_id).toBe(BOB_ID);
+    });
+
+    it("handles mixed owned and orphaned scenes", async () => {
+      app = await createTestApp();
+      await seedAlice(app);
+      await seedBob(app);
+      const SceneModelRef = getSceneModel(app);
+      const repo = app.get(ScenesRepository);
+
+      const orphan = await SceneModelRef.create({ title: "Orphan", data: VALID_SCENE, is_public: true, user_id: null });
+      const bobScene = await SceneModelRef.create({ title: "Bob's", data: VALID_SCENE, is_public: true, user_id: BOB_ID });
+
+      const adopted = await repo.adoptByIds([orphan.id, bobScene.id], ALICE_ID);
+      expect(adopted).toBe(1);
+
+      expect((await SceneModelRef.findByPk(orphan.id))!.user_id).toBe(ALICE_ID);
+      expect((await SceneModelRef.findByPk(bobScene.id))!.user_id).toBe(BOB_ID);
+    });
+
+    it("returns 0 for empty scene list", async () => {
+      app = await createTestApp();
+      const repo = app.get(ScenesRepository);
+
+      const adopted = await repo.adoptByIds([], ALICE_ID);
+      expect(adopted).toBe(0);
+    });
+
+    it("returns 0 for non-existent scene IDs", async () => {
+      app = await createTestApp();
+      const repo = app.get(ScenesRepository);
+
+      const adopted = await repo.adoptByIds(["nonexistent-id-1", "nonexistent-id-2"], ALICE_ID);
+      expect(adopted).toBe(0);
+    });
+
+    it("adopted scenes are accessible via authenticated owner", async () => {
+      // Simulate the full flow: anonymous creates, then logs in and scenes get adopted
+      app = await createTestApp();
+      await seedAlice(app);
+      const SceneModelRef = getSceneModel(app);
+      const repo = app.get(ScenesRepository);
+      const agent = request.agent(app.getHttpServer());
+
+      // Anonymous user creates two scenes
+      const r1 = await agent.post("/api/scenes").send({ data: VALID_SCENE, title: "Drawing 1" });
+      const r2 = await agent.post("/api/scenes").send({ data: VALID_SCENE, title: "Drawing 2" });
+      expect(r1.status).toBe(201);
+      expect(r2.status).toBe(201);
+
+      // Both are orphaned
+      expect(r1.body.user_id).toBeNull();
+      expect(r2.body.user_id).toBeNull();
+
+      // Simulate login adoption
+      await repo.adoptByIds([r1.body.id, r2.body.id], ALICE_ID);
+
+      // Verify scenes now belong to Alice
+      const s1 = await SceneModelRef.findByPk(r1.body.id);
+      const s2 = await SceneModelRef.findByPk(r2.body.id);
+      expect(s1!.user_id).toBe(ALICE_ID);
+      expect(s2!.user_id).toBe(ALICE_ID);
     });
   });
 });

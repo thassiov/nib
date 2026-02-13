@@ -3,6 +3,7 @@ import { InjectModel } from "@nestjs/sequelize";
 import { SceneModel } from "../database/models/scene.model.js";
 import { UserModel } from "../database/models/user.model.js";
 import type { WhereOptions } from "sequelize";
+import { Op } from "sequelize";
 
 export interface FindAllOptions {
   where: WhereOptions;
@@ -77,5 +78,26 @@ export class ScenesRepository {
 
   async delete(scene: SceneModel): Promise<void> {
     await scene.destroy();
+  }
+
+  /**
+   * Adopt orphaned scenes: set user_id on scenes that currently have no owner.
+   * Only updates scenes where user_id IS NULL (safety guard).
+   * Returns the number of scenes adopted.
+   */
+  async adoptByIds(sceneIds: string[], userId: string): Promise<number> {
+    if (!sceneIds.length) return 0;
+
+    const [count] = await this.sceneModel.update(
+      { user_id: userId } as any,
+      {
+        where: {
+          id: { [Op.in]: sceneIds },
+          user_id: null,
+        },
+      },
+    );
+
+    return count;
   }
 }

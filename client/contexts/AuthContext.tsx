@@ -51,7 +51,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [fetchUser]);
 
   const login = useCallback(() => {
-    window.location.href = "/auth/login";
+    const returnTo = window.location.pathname + window.location.search;
+    window.location.href = `/auth/login?returnTo=${encodeURIComponent(returnTo)}`;
   }, []);
 
   const logout = useCallback(() => {
