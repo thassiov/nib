@@ -88,12 +88,13 @@ export class ScenesController {
   /**
    * GET /api/scenes/:id
    * Get full scene data. Respects visibility rules.
+   * Returns a `canEdit` field indicating whether the requester can modify this scene.
    */
   @Get(":id")
   @UseGuards(OptionalAuthGuard)
   async findOne(@Param("id") id: string, @Req() req: Request) {
     const session = (req as any).session;
-    return this.scenesService.findById(id, session?.userId);
+    return this.scenesService.findById(id, session?.userId, session?.ownedScenes);
   }
 
   /**
@@ -170,22 +171,35 @@ export class ScenesController {
       return;
     }
 
+    // Track anonymous scene ownership in session
+    if (!userId && result.scene) {
+      if (!session.ownedScenes) session.ownedScenes = [];
+      session.ownedScenes.push(result.scene.id);
+    }
+
     res.status(201).json(result.scene);
   }
 
   /**
    * POST /api/scenes
-   * Create a new scene. Requires auth.
+   * Create a new scene. Works with or without authentication:
+   *   - Authenticated: user_id = session user, is_public defaults to false
+   *   - Anonymous: user_id = null, is_public defaults to true
+   * Anonymous creations are tracked in session.ownedScenes for edit access.
    */
   @Post()
-  @UseGuards(AuthGuard)
+  @UseGuards(OptionalAuthGuard)
   async create(@Body() body: any, @Req() req: Request, @Res() res: Response) {
     const session = (req as any).session;
+    const userId: string | undefined = session?.userId;
     const { title, data, is_public, thumbnail } = body;
 
+    // Anonymous creations default to public; authenticated default to private
+    const resolvedPublic = is_public ?? !userId;
+
     const result = await this.scenesService.create(
-      { title, data, is_public, thumbnail },
-      session.userId,
+      { title, data, is_public: resolvedPublic, thumbnail },
+      userId,
     );
 
     if (result.validation) {
@@ -196,15 +210,23 @@ export class ScenesController {
       return;
     }
 
+    // Track anonymous scene ownership in session
+    if (!userId && result.scene) {
+      if (!session.ownedScenes) session.ownedScenes = [];
+      session.ownedScenes.push(result.scene.id);
+    }
+
     res.status(201).json(result.scene);
   }
 
   /**
    * PUT /api/scenes/:id
-   * Update an existing scene. Requires auth + ownership.
+   * Update an existing scene. Requires ownership via:
+   *   - Authenticated: scene.user_id matches session.userId
+   *   - Anonymous: scene.id is in session.ownedScenes
    */
   @Put(":id")
-  @UseGuards(AuthGuard)
+  @UseGuards(OptionalAuthGuard)
   async update(
     @Param("id") id: string,
     @Body() body: any,
@@ -217,7 +239,8 @@ export class ScenesController {
     const result = await this.scenesService.update(
       id,
       { title, data, is_public, thumbnail },
-      session.userId,
+      session?.userId,
+      session?.ownedScenes,
     );
 
     if (result.validation) {
@@ -233,13 +256,15 @@ export class ScenesController {
 
   /**
    * DELETE /api/scenes/:id
-   * Delete a scene. Requires auth + ownership.
+   * Delete a scene. Requires ownership via:
+   *   - Authenticated: scene.user_id matches session.userId
+   *   - Anonymous: scene.id is in session.ownedScenes
    */
   @Delete(":id")
-  @UseGuards(AuthGuard)
+  @UseGuards(OptionalAuthGuard)
   @HttpCode(HttpStatus.NO_CONTENT)
   async remove(@Param("id") id: string, @Req() req: Request) {
     const session = (req as any).session;
-    await this.scenesService.delete(id, session.userId);
+    await this.scenesService.delete(id, session?.userId, session?.ownedScenes);
   }
 }

@@ -34,16 +34,14 @@ export function Gallery() {
     <div style={{ padding: 24 }}>
       <div style={styles.header}>
         <h1>Gallery</h1>
-        {user && (
-          <div style={styles.headerActions}>
-            <UploadDrawingButton style={styles.uploadButton}>
-              Upload
-            </UploadDrawingButton>
-            <NewDrawingButton style={styles.newButton}>
-              New Drawing
-            </NewDrawingButton>
-          </div>
-        )}
+        <div style={styles.headerActions}>
+          <UploadDrawingButton style={styles.uploadButton}>
+            Upload
+          </UploadDrawingButton>
+          <NewDrawingButton style={styles.newButton}>
+            New Drawing
+          </NewDrawingButton>
+        </div>
       </div>
 
       {loading && <p style={styles.status}>Loading...</p>}

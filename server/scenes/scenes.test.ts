@@ -180,13 +180,7 @@ describe("Scene routes", () => {
   // ========== Create scene ==========
 
   describe("POST /api/scenes", () => {
-    it("returns 403 without auth", async () => {
-      app = await createTestApp();
-      const res = await request(app.getHttpServer()).post("/api/scenes").send({ data: VALID_SCENE });
-      expect(res.status).toBe(403);
-    });
-
-    it("creates scene with valid data", async () => {
+    it("creates scene with valid data (authenticated)", async () => {
       app = await createAuthenticatedTestApp({ userId: ALICE_ID });
       await seedAlice(app);
 
@@ -195,6 +189,16 @@ describe("Scene routes", () => {
       expect(res.body.title).toBe("My Drawing");
       expect(res.body.user_id).toBe(ALICE_ID);
       expect(res.body.is_public).toBe(false);
+    });
+
+    it("creates scene without auth (anonymous)", async () => {
+      app = await createTestApp();
+
+      const res = await request(app.getHttpServer()).post("/api/scenes").send({ title: "Anon Drawing", data: VALID_SCENE });
+      expect(res.status).toBe(201);
+      expect(res.body.title).toBe("Anon Drawing");
+      expect(res.body.user_id).toBeNull();
+      expect(res.body.is_public).toBe(true);
     });
 
     it("defaults title to 'Untitled'", async () => {
@@ -499,6 +503,149 @@ describe("Scene routes", () => {
       expect(res.status).toBe(422);
       expect(res.body.error).toMatch(/invalid scene/i);
       expect(res.body.validation).toBeDefined();
+    });
+  });
+
+  // ========== Anonymous session ownership ==========
+
+  describe("Anonymous session ownership", () => {
+    it("anonymous user can update scene they created (via session)", async () => {
+      app = await createTestApp();
+      const agent = request.agent(app.getHttpServer());
+
+      // Create scene — session gets ownedScenes
+      const createRes = await agent.post("/api/scenes").send({ data: VALID_SCENE, title: "Anon Scene" });
+      expect(createRes.status).toBe(201);
+      const sceneId = createRes.body.id;
+
+      // Update using same session
+      const updateRes = await agent.put(`/api/scenes/${sceneId}`).send({ title: "Updated Anon" });
+      expect(updateRes.status).toBe(200);
+      expect(updateRes.body.title).toBe("Updated Anon");
+    });
+
+    it("anonymous user can delete scene they created (via session)", async () => {
+      app = await createTestApp();
+      const agent = request.agent(app.getHttpServer());
+
+      const createRes = await agent.post("/api/scenes").send({ data: VALID_SCENE });
+      expect(createRes.status).toBe(201);
+      const sceneId = createRes.body.id;
+
+      const deleteRes = await agent.delete(`/api/scenes/${sceneId}`);
+      expect(deleteRes.status).toBe(204);
+    });
+
+    it("different anonymous session cannot update someone else's anonymous scene", async () => {
+      app = await createTestApp();
+      const agent1 = request.agent(app.getHttpServer());
+      const agent2 = request.agent(app.getHttpServer());
+
+      // Agent 1 creates scene
+      const createRes = await agent1.post("/api/scenes").send({ data: VALID_SCENE });
+      expect(createRes.status).toBe(201);
+      const sceneId = createRes.body.id;
+
+      // Agent 2 (different session) tries to update
+      const updateRes = await agent2.put(`/api/scenes/${sceneId}`).send({ title: "Hacked" });
+      expect(updateRes.status).toBe(403);
+    });
+
+    it("different anonymous session cannot delete someone else's anonymous scene", async () => {
+      app = await createTestApp();
+      const agent1 = request.agent(app.getHttpServer());
+      const agent2 = request.agent(app.getHttpServer());
+
+      const createRes = await agent1.post("/api/scenes").send({ data: VALID_SCENE });
+      expect(createRes.status).toBe(201);
+      const sceneId = createRes.body.id;
+
+      const deleteRes = await agent2.delete(`/api/scenes/${sceneId}`);
+      expect(deleteRes.status).toBe(403);
+    });
+
+    it("GET /api/scenes/:id returns canEdit=true for anonymous owner", async () => {
+      app = await createTestApp();
+      const agent = request.agent(app.getHttpServer());
+
+      const createRes = await agent.post("/api/scenes").send({ data: VALID_SCENE });
+      expect(createRes.status).toBe(201);
+      const sceneId = createRes.body.id;
+
+      const getRes = await agent.get(`/api/scenes/${sceneId}`);
+      expect(getRes.status).toBe(200);
+      expect(getRes.body.canEdit).toBe(true);
+    });
+
+    it("GET /api/scenes/:id returns canEdit=false for different anonymous session", async () => {
+      app = await createTestApp();
+      const agent1 = request.agent(app.getHttpServer());
+      const agent2 = request.agent(app.getHttpServer());
+
+      const createRes = await agent1.post("/api/scenes").send({ data: VALID_SCENE });
+      expect(createRes.status).toBe(201);
+      const sceneId = createRes.body.id;
+
+      const getRes = await agent2.get(`/api/scenes/${sceneId}`);
+      expect(getRes.status).toBe(200);
+      expect(getRes.body.canEdit).toBe(false);
+    });
+
+    it("GET /api/scenes/:id returns canEdit=true for authenticated owner", async () => {
+      app = await createAuthenticatedTestApp({ userId: ALICE_ID });
+      await seedAlice(app);
+      const scene = await getSceneModel(app).create({
+        user_id: ALICE_ID, title: "Mine", data: VALID_SCENE, is_public: true,
+      });
+
+      const res = await request(app.getHttpServer()).get(`/api/scenes/${scene.id}`);
+      expect(res.status).toBe(200);
+      expect(res.body.canEdit).toBe(true);
+    });
+
+    it("GET /api/scenes/:id returns canEdit=false for non-owner", async () => {
+      app = await createAuthenticatedTestApp({ userId: "other-user-id" });
+      const alice = await seedAlice(app);
+      const scene = await getSceneModel(app).create({
+        user_id: alice.id, title: "Not Mine", data: VALID_SCENE, is_public: true,
+      });
+
+      const res = await request(app.getHttpServer()).get(`/api/scenes/${scene.id}`);
+      expect(res.status).toBe(200);
+      expect(res.body.canEdit).toBe(false);
+    });
+
+    it("anonymous scene defaults to is_public=true", async () => {
+      app = await createTestApp();
+      const agent = request.agent(app.getHttpServer());
+
+      const res = await agent.post("/api/scenes").send({ data: VALID_SCENE });
+      expect(res.status).toBe(201);
+      expect(res.body.is_public).toBe(true);
+      expect(res.body.user_id).toBeNull();
+    });
+
+    it("anonymous user can update scene data and autosave works", async () => {
+      app = await createTestApp();
+      const agent = request.agent(app.getHttpServer());
+
+      const createRes = await agent.post("/api/scenes").send({ data: VALID_SCENE, title: "Draft" });
+      expect(createRes.status).toBe(201);
+      const sceneId = createRes.body.id;
+
+      // Simulate autosave with new data
+      const updatedScene = {
+        elements: [{ id: "rect2", type: "rectangle", x: 10, y: 10, width: 200, height: 100 }],
+        appState: {},
+        files: {},
+      };
+      const updateRes = await agent.put(`/api/scenes/${sceneId}`).send({ data: updatedScene });
+      expect(updateRes.status).toBe(200);
+
+      // Verify data persisted
+      const getRes = await agent.get(`/api/scenes/${sceneId}`);
+      expect(getRes.status).toBe(200);
+      expect(getRes.body.data.elements[0].id).toBe("rect2");
     });
   });
 

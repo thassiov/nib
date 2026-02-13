@@ -57,10 +57,27 @@ export class ScenesService {
   }
 
   /**
+   * Check if the requester can modify a scene.
+   * Ownership is established by either:
+   *   - Authenticated: scene.user_id matches the requesting user's ID
+   *   - Anonymous session: scene.id is in the session's ownedScenes list
+   */
+  private canModify(scene: SceneModel, userId?: string, ownedScenes?: string[]): boolean {
+    if (userId && scene.user_id === userId) return true;
+    if (ownedScenes?.includes(scene.id)) return true;
+    return false;
+  }
+
+  /**
    * Get a single scene by ID.
    * Public scenes are accessible to anyone; private scenes only to owner.
+   * Returns a plain object with a `canEdit` flag indicating edit permission.
    */
-  async findById(id: string, requestingUserId?: string): Promise<SceneModel> {
+  async findById(
+    id: string,
+    requestingUserId?: string,
+    ownedScenes?: string[],
+  ): Promise<Record<string, unknown>> {
     const scene = await this.scenesRepository.findById(id, true);
 
     if (!scene) {
@@ -68,11 +85,15 @@ export class ScenesService {
     }
 
     // Private scenes: only the owner can view
-    if (!scene.is_public && scene.user_id !== requestingUserId) {
+    if (!scene.is_public && !this.canModify(scene, requestingUserId, ownedScenes)) {
       throw new NotFoundException("Scene not found");
     }
 
-    return scene;
+    const json = scene.toJSON();
+    return {
+      ...json,
+      canEdit: this.canModify(scene, requestingUserId, ownedScenes),
+    };
   }
 
   /**
@@ -99,12 +120,13 @@ export class ScenesService {
   }
 
   /**
-   * Update an existing scene. Requires ownership.
+   * Update an existing scene. Requires ownership via user_id or session ownedScenes.
    */
   async update(
     id: string,
     data: { title?: string; data?: object; is_public?: boolean; thumbnail?: string },
-    userId: string,
+    userId?: string,
+    ownedScenes?: string[],
   ): Promise<{ scene?: SceneModel; validation?: any }> {
     const scene = await this.scenesRepository.findById(id);
 
@@ -112,7 +134,7 @@ export class ScenesService {
       throw new NotFoundException("Scene not found");
     }
 
-    if (scene.user_id !== userId) {
+    if (!this.canModify(scene, userId, ownedScenes)) {
       throw new ForbiddenException("Not authorized to modify this scene");
     }
 
@@ -135,16 +157,16 @@ export class ScenesService {
   }
 
   /**
-   * Delete a scene. Requires ownership.
+   * Delete a scene. Requires ownership via user_id or session ownedScenes.
    */
-  async delete(id: string, userId: string): Promise<void> {
+  async delete(id: string, userId?: string, ownedScenes?: string[]): Promise<void> {
     const scene = await this.scenesRepository.findById(id);
 
     if (!scene) {
       throw new NotFoundException("Scene not found");
     }
 
-    if (scene.user_id !== userId) {
+    if (!this.canModify(scene, userId, ownedScenes)) {
       throw new ForbiddenException("Not authorized to delete this scene");
     }
 

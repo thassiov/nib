@@ -18,13 +18,13 @@ async function bootstrap() {
   const sessionConfig: session.SessionOptions = {
     secret: process.env.SESSION_SECRET || "nib-dev-secret-change-me",
     resave: false,
-    saveUninitialized: false,
+    saveUninitialized: true,
     name: "nib.sid",
     cookie: {
       httpOnly: true,
       secure: process.env.COOKIE_SECURE === "true",
       sameSite: "lax",
-      maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
+      maxAge: 30 * 24 * 60 * 60 * 1000, // 30 days
     },
   };
 

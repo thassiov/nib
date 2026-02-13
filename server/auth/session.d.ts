@@ -17,6 +17,8 @@ declare module "express-session" {
     username?: string;
     /** User role: 'admin' or 'user' */
     role?: string;
+    /** Scene IDs created in this session (anonymous ownership) */
+    ownedScenes?: string[];
     /** ID token for logout hint */
     idToken?: string;
   }

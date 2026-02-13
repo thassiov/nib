@@ -35,8 +35,8 @@ export function Editor() {
     apiRef.current = api;
   }, [api]);
 
-  const isOwner = scene ? scene.user_id === user?.id : !!user;
-  const readOnly = !isOwner;
+  const canEdit = scene?.canEdit ?? false;
+  const readOnly = !canEdit;
 
   // Load scene
   useEffect(() => {
@@ -421,21 +421,17 @@ export function Editor() {
               </MainMenu.Item>
             )}
 
-            {/* Clone / Make a Copy — logged in only */}
-            {user && (
-              <MainMenu.Item onSelect={handleClone}>
-                Make a Copy
-              </MainMenu.Item>
-            )}
+            {/* Clone / Make a Copy */}
+            <MainMenu.Item onSelect={handleClone}>
+              Make a Copy
+            </MainMenu.Item>
 
             <MainMenu.Separator />
 
-            {/* Upload New — logged in only */}
-            {user && (
-              <MainMenu.Item onSelect={handleUploadNew}>
-                Upload New Drawing
-              </MainMenu.Item>
-            )}
+            {/* Upload New */}
+            <MainMenu.Item onSelect={handleUploadNew}>
+              Upload New Drawing
+            </MainMenu.Item>
 
             {/* Export — built-in Excalidraw export */}
             <MainMenu.DefaultItems.Export />

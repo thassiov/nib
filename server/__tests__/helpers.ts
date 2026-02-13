@@ -38,12 +38,12 @@ export async function createTestApp(): Promise<INestApplication> {
 
   const app = moduleRef.createNestApplication();
 
-  // Session middleware (same as production)
+  // Session middleware (same as production — saveUninitialized: true for anonymous session tracking)
   app.use(
     session({
       secret: "test-secret",
       resave: false,
-      saveUninitialized: false,
+      saveUninitialized: true,
       name: "nib.sid",
     }),
   );
@@ -90,7 +90,7 @@ export async function createAuthenticatedTestApp(
     session({
       secret: "test-secret",
       resave: false,
-      saveUninitialized: false,
+      saveUninitialized: true,
       name: "nib.sid",
     }),
   );

@@ -18,7 +18,7 @@ export interface SceneListItem {
 
 export interface SceneDetail {
   id: string;
-  user_id: string;
+  user_id: string | null;
   title: string;
   data: {
     elements: unknown[];
@@ -27,6 +27,8 @@ export interface SceneDetail {
   };
   thumbnail: string | null;
   is_public: boolean;
+  /** Whether the current requester can edit this scene */
+  canEdit: boolean;
   created_at: string;
   updated_at: string;
   user?: {
