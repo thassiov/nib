@@ -22,14 +22,6 @@ export function App() {
               </ProtectedRoute>
             }
           />
-          <Route
-            path="/drawing/new"
-            element={
-              <ProtectedRoute>
-                <Editor />
-              </ProtectedRoute>
-            }
-          />
           <Route path="/drawing/:id" element={<Editor />} />
         </Routes>
       </AuthProvider>

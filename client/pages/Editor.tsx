@@ -19,14 +19,12 @@ export function Editor() {
   const [scene, setScene] = useState<SceneDetail | null>(null);
   const [title, setTitle] = useState("Untitled");
   const [isPublic, setIsPublic] = useState(false);
-  const [loading, setLoading] = useState(!!id);
+  const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [lastSaved, setLastSaved] = useState<Date | null>(null);
   const [editingTitle, setEditingTitle] = useState(false);
 
-  // Track the scene ID for new drawings that get saved for the first time
-  const sceneIdRef = useRef<string | null>(id || null);
   // Snapshot of elements at last sync (for dirty detection)
   const lastSyncedElementsRef = useRef<readonly any[] | null>(null);
   // Ref to api for use in interval/cleanup without stale closures
@@ -38,24 +36,20 @@ export function Editor() {
   }, [api]);
 
   const isOwner = scene ? scene.user_id === user?.id : !!user;
-  const isNew = !id;
-  const readOnly = !isNew && !isOwner;
+  const readOnly = !isOwner;
 
-  // Load existing scene
+  // Load scene
   useEffect(() => {
-    if (!id) return;
-
     let cancelled = false;
     setLoading(true);
     setError(null);
 
-    getScene(id)
+    getScene(id!)
       .then((data) => {
         if (cancelled) return;
         setScene(data);
         setTitle(data.title);
         setIsPublic(data.is_public);
-        sceneIdRef.current = data.id;
         setLoading(false);
         logger.info("Editor: scene loaded", { id: data.id, title: data.title });
       })
@@ -71,16 +65,24 @@ export function Editor() {
     };
   }, [id]);
 
+  // Strip runtime-only fields from appState before persisting.
+  // Excalidraw keeps `collaborators` as a Map (not JSON-serializable)
+  // and other transient UI state that shouldn't be saved.
+  const sanitizeAppState = useCallback((appState: Record<string, unknown>) => {
+    const { collaborators, ...rest } = appState;
+    return rest;
+  }, []);
+
   // Get current scene data from the Excalidraw API ref
   const getSceneData = useCallback(() => {
     const currentApi = apiRef.current;
     if (!currentApi) return null;
     return {
       elements: currentApi.getSceneElements(),
-      appState: currentApi.getAppState(),
+      appState: sanitizeAppState(currentApi.getAppState() as Record<string, unknown>),
       files: currentApi.getFiles(),
     };
-  }, []);
+  }, [sanitizeAppState]);
 
   // Check if elements have changed since last sync
   const isDirty = useCallback(() => {
@@ -129,7 +131,7 @@ export function Editor() {
   // Core save function
   const doSave = useCallback(async () => {
     const currentApi = apiRef.current;
-    if (!currentApi || readOnly) return;
+    if (!currentApi || readOnly || !id) return;
 
     const sceneData = getSceneData();
     if (!sceneData) return;
@@ -137,46 +139,38 @@ export function Editor() {
     setSaving(true);
     try {
       const thumbnail = await generateThumbnail();
-      if (sceneIdRef.current) {
-        await updateScene(sceneIdRef.current, { data: sceneData, ...(thumbnail && { thumbnail }) });
-      } else {
-        const created = await createScene({ title, data: sceneData, ...(thumbnail && { thumbnail }) });
-        sceneIdRef.current = created.id;
-        setScene(created);
-        navigate(`/drawing/${created.id}`, { replace: true });
-      }
+      await updateScene(id, { data: sceneData, ...(thumbnail && { thumbnail }) });
       lastSyncedElementsRef.current = currentApi.getSceneElements();
       setLastSaved(new Date());
-      logger.info("Editor: scene saved", { id: sceneIdRef.current });
+      logger.info("Editor: scene saved", { id });
     } catch (err) {
       logger.error("Editor: save failed", { error: String(err) });
     } finally {
       setSaving(false);
     }
-  }, [readOnly, title, navigate, getSceneData, generateThumbnail]);
+  }, [readOnly, id, getSceneData, generateThumbnail]);
 
   // 5-second sync interval
   useEffect(() => {
     if (readOnly) return;
 
     const interval = setInterval(async () => {
-      // Only sync if we have a scene ID (saved at least once) and content is dirty
-      if (sceneIdRef.current && isDirty()) {
+      if (isDirty()) {
         const currentApi = apiRef.current;
         if (!currentApi) return;
 
         const sceneData = {
           elements: currentApi.getSceneElements(),
-          appState: currentApi.getAppState(),
+          appState: sanitizeAppState(currentApi.getAppState() as Record<string, unknown>),
           files: currentApi.getFiles(),
         };
 
         try {
           const thumbnail = await generateThumbnail();
-          await updateScene(sceneIdRef.current!, { data: sceneData, ...(thumbnail && { thumbnail }) });
+          await updateScene(id!, { data: sceneData, ...(thumbnail && { thumbnail }) });
           lastSyncedElementsRef.current = currentApi.getSceneElements();
           setLastSaved(new Date());
-          logger.info("Editor: autosaved", { id: sceneIdRef.current });
+          logger.info("Editor: autosaved", { id });
         } catch (err) {
           logger.error("Editor: autosave failed", { error: String(err) });
         }
@@ -184,22 +178,24 @@ export function Editor() {
     }, SYNC_INTERVAL_MS);
 
     return () => clearInterval(interval);
-  }, [readOnly, isDirty, generateThumbnail]);
+  }, [id, readOnly, isDirty, generateThumbnail, sanitizeAppState]);
 
-  // Flush on unmount if dirty (fire-and-forget, best-effort thumbnail)
+  // Flush on unmount if dirty (fire-and-forget, best-effort thumbnail).
+  // Guard: skip if elements are empty — Excalidraw may return [] during teardown
+  // when the canvas is already destroyed.
   useEffect(() => {
+    const sceneId = id;
     return () => {
       const currentApi = apiRef.current;
-      if (currentApi && sceneIdRef.current) {
+      if (currentApi && sceneId) {
         const currentElements = currentApi.getSceneElements();
         const lastSynced = lastSyncedElementsRef.current;
         const dirty = !lastSynced || currentElements !== lastSynced;
 
-        if (dirty) {
-          const sceneId = sceneIdRef.current;
+        if (dirty && currentElements.length > 0) {
           const sceneData = {
             elements: currentElements,
-            appState: currentApi.getAppState(),
+            appState: sanitizeAppState(currentApi.getAppState() as Record<string, unknown>),
             files: currentApi.getFiles(),
           };
 
@@ -215,7 +211,7 @@ export function Editor() {
         }
       }
     };
-  }, [generateThumbnail]);
+  }, [id, generateThumbnail, sanitizeAppState]);
 
   // Manual save (flush now)
   const handleSave = useCallback(() => {
@@ -292,29 +288,29 @@ export function Editor() {
 
   // Toggle public/private
   const handleTogglePublic = useCallback(async () => {
-    if (!sceneIdRef.current || readOnly) return;
+    if (!id || readOnly) return;
 
     const newValue = !isPublic;
     try {
-      await updateScene(sceneIdRef.current, { is_public: newValue });
+      await updateScene(id, { is_public: newValue });
       setIsPublic(newValue);
-      logger.info("Editor: visibility changed", { id: sceneIdRef.current, is_public: newValue });
+      logger.info("Editor: visibility changed", { id, is_public: newValue });
     } catch (err) {
       logger.error("Editor: visibility update failed", { error: String(err) });
     }
-  }, [isPublic, readOnly]);
+  }, [id, isPublic, readOnly]);
 
   const handleTitleSubmit = useCallback(async () => {
     setEditingTitle(false);
-    if (sceneIdRef.current && !readOnly) {
+    if (id && !readOnly) {
       try {
-        await updateScene(sceneIdRef.current, { title });
-        logger.info("Editor: title updated", { id: sceneIdRef.current, title });
+        await updateScene(id, { title });
+        logger.info("Editor: title updated", { id, title });
       } catch (err) {
         logger.error("Editor: title update failed", { error: String(err) });
       }
     }
-  }, [title, readOnly]);
+  }, [id, title, readOnly]);
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent) => {
@@ -364,7 +360,7 @@ export function Editor() {
             </span>
           )}
           {readOnly && <span style={styles.badge}>View only</span>}
-          {!readOnly && sceneIdRef.current && (
+          {!readOnly && (
             <span style={{ ...styles.badge, backgroundColor: isPublic ? "#d4edda" : "#eee", color: isPublic ? "#155724" : "#888" }}>
               {isPublic ? "Public" : "Private"}
             </span>
@@ -377,11 +373,7 @@ export function Editor() {
               Saved {lastSaved.toLocaleTimeString()}
             </span>
           )}
-          {!readOnly && !sceneIdRef.current && (
-            <button onClick={handleSave} style={styles.saveButton}>
-              Save
-            </button>
-          )}
+          
         </div>
       </div>
 
@@ -393,7 +385,10 @@ export function Editor() {
             scene
               ? {
                   elements: scene.data.elements as any,
-                  appState: scene.data.appState as any,
+                  appState: {
+                    ...(scene.data.appState as any),
+                    collaborators: new Map(),
+                  },
                   files: scene.data.files as any,
                   scrollToContent: true,
                 }
@@ -412,22 +407,22 @@ export function Editor() {
           }}
         >
           <MainMenu>
-            {/* Save — owner only, existing scene only */}
-            {!readOnly && sceneIdRef.current && (
+            {/* Save — owner only */}
+            {!readOnly && (
               <MainMenu.Item onSelect={handleSave}>
                 Save now
               </MainMenu.Item>
             )}
 
-            {/* Make Public / Make Private — owner only, existing scene only */}
-            {!readOnly && sceneIdRef.current && (
+            {/* Make Public / Make Private — owner only */}
+            {!readOnly && (
               <MainMenu.Item onSelect={handleTogglePublic}>
                 {isPublic ? "Make Private" : "Make Public"}
               </MainMenu.Item>
             )}
 
             {/* Clone / Make a Copy — logged in only */}
-            {user && sceneIdRef.current && (
+            {user && (
               <MainMenu.Item onSelect={handleClone}>
                 Make a Copy
               </MainMenu.Item>

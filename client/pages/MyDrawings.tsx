@@ -1,8 +1,9 @@
 import { useState, useEffect } from "react";
-import { Link } from "react-router-dom";
 import { useAuth } from "../contexts/AuthContext";
 import { listMyScenes, deleteScene } from "../api/scenes";
 import { SceneCard } from "../components/SceneCard";
+import { NewDrawingButton } from "../components/NewDrawingButton";
+import { UploadDrawingButton } from "../components/UploadDrawingButton";
 import type { SceneListItem } from "../api/scenes";
 
 export function MyDrawings() {
@@ -44,9 +45,14 @@ export function MyDrawings() {
     <div style={{ padding: 24 }}>
       <div style={styles.header}>
         <h1>My Drawings</h1>
-        <Link to="/drawing/new" style={styles.newButton}>
-          New Drawing
-        </Link>
+        <div style={styles.headerActions}>
+          <UploadDrawingButton style={styles.uploadButton}>
+            Upload
+          </UploadDrawingButton>
+          <NewDrawingButton style={styles.newButton}>
+            New Drawing
+          </NewDrawingButton>
+        </div>
       </div>
 
       {loading && <p style={styles.status}>Loading...</p>}
@@ -55,9 +61,14 @@ export function MyDrawings() {
       {!loading && !error && scenes.length === 0 && (
         <div style={{ textAlign: "center", marginTop: 48 }}>
           <p style={{ color: "#666", marginBottom: 16 }}>You haven't created any drawings yet.</p>
-          <Link to="/drawing/new" style={styles.newButton}>
-            Create your first drawing
-          </Link>
+          <div style={{ display: "flex", justifyContent: "center", gap: 8 }}>
+            <UploadDrawingButton style={styles.uploadButton}>
+              Upload a drawing
+            </UploadDrawingButton>
+            <NewDrawingButton style={styles.newButton}>
+              Create your first drawing
+            </NewDrawingButton>
+          </div>
         </div>
       )}
 
@@ -116,13 +127,27 @@ const styles: Record<string, React.CSSProperties> = {
     alignItems: "center",
     marginBottom: 24,
   },
+  headerActions: {
+    display: "flex",
+    gap: 8,
+  },
+  uploadButton: {
+    padding: "8px 16px",
+    backgroundColor: "#fff",
+    color: "#1a1a1a",
+    border: "1px solid #ccc",
+    borderRadius: 4,
+    fontSize: 14,
+    cursor: "pointer",
+  },
   newButton: {
     padding: "8px 16px",
     backgroundColor: "#1a1a1a",
     color: "#fff",
-    textDecoration: "none",
+    border: "none",
     borderRadius: 4,
     fontSize: 14,
+    cursor: "pointer",
   },
   status: {
     color: "#666",

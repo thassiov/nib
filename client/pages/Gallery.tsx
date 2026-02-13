@@ -1,8 +1,9 @@
 import { useState, useEffect } from "react";
-import { Link } from "react-router-dom";
 import { useAuth } from "../contexts/AuthContext";
 import { listPublicScenes } from "../api/scenes";
 import { SceneCard } from "../components/SceneCard";
+import { NewDrawingButton } from "../components/NewDrawingButton";
+import { UploadDrawingButton } from "../components/UploadDrawingButton";
 import type { SceneListItem } from "../api/scenes";
 
 export function Gallery() {
@@ -34,9 +35,14 @@ export function Gallery() {
       <div style={styles.header}>
         <h1>Gallery</h1>
         {user && (
-          <Link to="/drawing/new" style={styles.newButton}>
-            New Drawing
-          </Link>
+          <div style={styles.headerActions}>
+            <UploadDrawingButton style={styles.uploadButton}>
+              Upload
+            </UploadDrawingButton>
+            <NewDrawingButton style={styles.newButton}>
+              New Drawing
+            </NewDrawingButton>
+          </div>
         )}
       </div>
 
@@ -89,13 +95,27 @@ const styles: Record<string, React.CSSProperties> = {
     alignItems: "center",
     marginBottom: 24,
   },
+  headerActions: {
+    display: "flex",
+    gap: 8,
+  },
+  uploadButton: {
+    padding: "8px 16px",
+    backgroundColor: "#fff",
+    color: "#1a1a1a",
+    border: "1px solid #ccc",
+    borderRadius: 4,
+    fontSize: 14,
+    cursor: "pointer",
+  },
   newButton: {
     padding: "8px 16px",
     backgroundColor: "#1a1a1a",
     color: "#fff",
-    textDecoration: "none",
+    border: "none",
     borderRadius: 4,
     fontSize: 14,
+    cursor: "pointer",
   },
   status: {
     color: "#666",
