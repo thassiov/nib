@@ -10,13 +10,14 @@ export class UsersRepository {
   ) {}
 
   /**
-   * Find or create a user by OIDC subject. Updates username/email/avatar on each login.
+   * Find or create a user by OIDC subject. Updates username/email/avatar/role on each login.
    */
   async upsert(data: {
     sub: string;
     username: string;
     email: string | null;
     avatar_url: string | null;
+    role: string;
   }): Promise<UserModel> {
     const [user] = await this.userModel.upsert(data);
     return user;

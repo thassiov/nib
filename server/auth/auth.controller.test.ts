@@ -36,6 +36,7 @@ describe("Auth endpoints", () => {
         id: userId,
         sub: "oidc-sub-1",
         username: "alice",
+        role: "user",
       });
     });
   });

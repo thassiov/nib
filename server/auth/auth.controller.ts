@@ -70,17 +70,21 @@ export class AuthController {
 
       // Upsert user in database
       const username = userInfo.preferred_username || userInfo.name || userInfo.sub;
+      const adminSubs = (process.env.ADMIN_SUBS || "").split(",").map((s) => s.trim()).filter(Boolean);
+      const role = adminSubs.includes(userInfo.sub) ? "admin" : "user";
       const user = await this.usersService.upsert({
         sub: userInfo.sub,
         username,
         email: userInfo.email || null,
         avatar_url: userInfo.picture || null,
+        role,
       });
 
       // Set session
       session.userId = user.id;
       session.sub = userInfo.sub;
       session.username = username;
+      session.role = user.role;
       session.idToken = idToken;
 
       session.save((err: Error | null) => {
@@ -142,6 +146,7 @@ export class AuthController {
       id: session.userId,
       sub: session.sub,
       username: session.username,
+      role: session.role || "user",
     });
   }
 }

@@ -64,7 +64,7 @@ export async function createTestApp(): Promise<INestApplication> {
  * Injects fake auth middleware before the Nest routes.
  */
 export async function createAuthenticatedTestApp(
-  sessionData: { userId: string; sub?: string; username?: string },
+  sessionData: { userId: string; sub?: string; username?: string; role?: string },
 ): Promise<INestApplication> {
   const moduleRef = await Test.createTestingModule({
     imports: [
@@ -101,6 +101,7 @@ export async function createAuthenticatedTestApp(
       req.session.userId = sessionData.userId;
       req.session.sub = sessionData.sub || "test-sub";
       req.session.username = sessionData.username || "testuser";
+      req.session.role = sessionData.role || "user";
     }
     next();
   });

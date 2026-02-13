@@ -24,16 +24,18 @@ export function NavBar() {
       </div>
 
       <div style={styles.right}>
-        <button
-          onClick={toggleLogs}
-          style={{
-            ...styles.logToggle,
-            color: logsEnabled ? "#2e7d32" : "#999",
-          }}
-          title={logsEnabled ? "Remote logging: ON" : "Remote logging: OFF"}
-        >
-          {logsEnabled ? "Logs ON" : "Logs OFF"}
-        </button>
+        {user?.role === "admin" && (
+          <button
+            onClick={toggleLogs}
+            style={{
+              ...styles.logToggle,
+              color: logsEnabled ? "#2e7d32" : "#999",
+            }}
+            title={logsEnabled ? "Remote logging: ON" : "Remote logging: OFF"}
+          >
+            {logsEnabled ? "Logs ON" : "Logs OFF"}
+          </button>
+        )}
         {loading ? null : user ? (
           <div style={styles.userArea}>
             <span style={styles.username}>{user.username}</span>

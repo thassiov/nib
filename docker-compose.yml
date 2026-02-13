@@ -19,6 +19,7 @@ services:
       OIDC_REDIRECT_URI: ${OIDC_REDIRECT_URI:-http://localhost:3000/auth/callback}
       OIDC_POST_LOGOUT_URI: ${OIDC_POST_LOGOUT_URI:-http://localhost:3000}
       COOKIE_SECURE: "${COOKIE_SECURE:-false}"
+      ADMIN_SUBS: "${ADMIN_SUBS:-}"
     depends_on:
       postgres:
         condition: service_healthy
@@ -33,6 +34,7 @@ services:
     volumes:
       - pgdata:/var/lib/postgresql/data
       - ./migrations/001_initial.sql:/docker-entrypoint-initdb.d/001_initial.sql:ro
+      - ./migrations/002_add_user_role.sql:/docker-entrypoint-initdb.d/002_add_user_role.sql:ro
     ports:
       - "5432:5432"
     healthcheck:

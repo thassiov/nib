@@ -15,6 +15,8 @@ declare module "express-session" {
     sub?: string;
     /** Display name */
     username?: string;
+    /** User role: 'admin' or 'user' */
+    role?: string;
     /** ID token for logout hint */
     idToken?: string;
   }

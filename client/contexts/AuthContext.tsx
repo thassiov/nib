@@ -5,6 +5,7 @@ export interface User {
   id: string;
   sub: string;
   username: string;
+  role: "admin" | "user";
 }
 
 interface AuthContextValue {

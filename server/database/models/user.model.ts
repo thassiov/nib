@@ -37,6 +37,11 @@ export class UserModel extends Model {
   @Column(DataType.TEXT)
   declare avatar_url: string | null;
 
+  @AllowNull(false)
+  @Default("user")
+  @Column(DataType.TEXT)
+  declare role: string;
+
   @Default(DataType.NOW)
   @Column(DataType.DATE)
   declare created_at: Date;

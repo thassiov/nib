@@ -11,6 +11,7 @@ export class UsersService {
     username: string;
     email: string | null;
     avatar_url: string | null;
+    role: string;
   }): Promise<UserModel> {
     return this.usersRepository.upsert(data);
   }
