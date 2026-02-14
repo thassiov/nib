@@ -46,7 +46,13 @@ async function bootstrap() {
     console.log("Session store: in-memory (no DB_HOST set)");
   }
 
-  app.use(session(sessionConfig));
+  // Skip session middleware for /metrics (Alloy scrapes every 15s, would create
+  // a new anonymous session each time since there's no cookie in the request)
+  const sessionMiddleware = session(sessionConfig);
+  app.use((req: any, res: any, next: any) => {
+    if (req.path === "/metrics") return next();
+    sessionMiddleware(req, res, next);
+  });
 
   // Body parsing limit
   app.useBodyParser("json", { limit: "50mb" });

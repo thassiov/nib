@@ -45,7 +45,8 @@ export class MetricsService {
 
     this.sessionsGauge = new Gauge({
       name: "nib_sessions_active",
-      help: "Number of active sessions in the session store",
+      help: "Number of active sessions in the session store by type",
+      labelNames: ["type"] as const,
       registers: [this.registry],
       collect: async () => {
         await this.collectSessionCount();
@@ -119,13 +120,21 @@ export class MetricsService {
 
   private async collectSessionCount(): Promise<void> {
     try {
-      // connect-pg-simple stores sessions in the "session" table
-      // This query only works in PostgreSQL (production); silently fails in SQLite (tests)
+      // connect-pg-simple stores sessions in the "session" table.
+      // Sessions with a userId in the JSON payload are authenticated; others are anonymous.
+      // This query only works in PostgreSQL (production); silently fails in SQLite (tests).
       const [results] = await this.sequelize.query(
-        `SELECT COUNT(*) AS count FROM session WHERE expire > NOW()`,
+        `SELECT
+           CASE WHEN sess::jsonb->>'userId' IS NOT NULL THEN 'authenticated' ELSE 'anonymous' END AS type,
+           COUNT(*) AS count
+         FROM session
+         WHERE expire > NOW()
+         GROUP BY type`,
       );
-      const count = Number((results as Array<{ count: number | string }>)[0]?.count ?? 0);
-      this.sessionsGauge.set(count);
+      this.sessionsGauge.reset();
+      for (const row of results as Array<{ type: string; count: number | string }>) {
+        this.sessionsGauge.set({ type: row.type }, Number(row.count));
+      }
     } catch {
       // Table doesn't exist (dev/test) or DB unreachable — leave at 0
     }
