@@ -1,348 +1,220 @@
 # nib
 
-A drawing platform wrapping [Excalidraw](https://excalidraw.com/) with authentication, persistent storage, and galleries.
+A self-hosted drawing platform powered by [Excalidraw](https://excalidraw.com/). Create, save, and share drawings with authentication, persistent storage, and galleries.
 
-## Overview
+## Features
 
-nib lets you create, save, and share Excalidraw drawings behind an OIDC login. Drawings are stored in PostgreSQL and can be kept private or published to a public gallery.
+- **Excalidraw editor** with autosave, manual save, cloning, and file upload
+- **Public gallery** for sharing drawings with anyone
+- **Personal drawings** page with visibility toggles and delete
+- **Thumbnail previews** generated on save
+- **OIDC authentication** via any OpenID Connect provider (tested with Authelia)
+- **Anonymous access** — anyone can create and edit drawings without logging in, with session-based ownership (30-day TTL). Logging in adopts anonymous drawings into the user's account
+- **User roles** — admin and user roles, controlled via `ADMIN_SUBS` env var
+- **File upload API** — upload `.excalidraw` files via curl or scripts, with or without authentication
+- **Scene validation** — structural validation of Excalidraw scene data on the server
+- **Docker support** — single `docker compose up` to run everything
 
-### Current status
+## Stack
 
-The server API and React client are fully functional and tested. The app has an Excalidraw editor with autosave, public gallery, personal drawings page, and file upload endpoint.
+TypeScript, React 18, Vite 5, Tailwind CSS v4, shadcn/ui, NestJS 11, Express 5, Sequelize, PostgreSQL.
 
-## Architecture
+## Quick start (Docker)
 
+```bash
+git clone https://github.com/thassiov/nib.git
+cd nib
 ```
-client/               React + Vite SPA
-  contexts/           Auth state management
-  components/         NavBar, ProtectedRoute, SceneCard
-  pages/              Gallery, MyDrawings, Editor
 
-server/               NestJS API
-  auth/               OIDC integration (Authelia), guards
-  scenes/             Scene CRUD (controller, service, repository)
-  users/              User operations (service, repository)
-  database/           Sequelize models (UserModel, SceneModel)
-  services/           Excalidraw scene validator
-  migrate.ts          Database migration script
+Create a `.env` file:
+
+```bash
+SESSION_SECRET=<generate-with-openssl-rand-hex-32>
+DB_PASS=<postgres-password>
+OIDC_ISSUER=https://your-oidc-provider.example.com
+OIDC_CLIENT_ID=nib
+OIDC_CLIENT_SECRET=<your-oidc-client-secret>
+OIDC_REDIRECT_URI=http://localhost:3000/auth/callback
+OIDC_POST_LOGOUT_URI=http://localhost:3000
 ```
 
-**Stack:** TypeScript, React 18, Vite, NestJS 11, Express 5, Sequelize (sequelize-typescript), PostgreSQL, Authelia (OIDC), Vitest.
+Run:
 
-## Setup
+```bash
+docker compose up -d
+```
+
+The app will be available at `http://localhost:3000`. The included PostgreSQL container handles the database automatically.
+
+> Without an OIDC provider, the app still works — you can use the public gallery and create anonymous drawings. Authentication is only needed for private drawings and the "My Drawings" page.
+
+## Quick start (bare metal)
 
 ### Prerequisites
 
-- Node.js 20+
-- PostgreSQL instance
-- Authelia (or any OIDC provider)
+- Node.js 22+
+- PostgreSQL
 
-### Install
+### Install and run
 
 ```bash
-git clone git@github.com:thassiov/nib.git
+git clone https://github.com/thassiov/nib.git
 cd nib
 npm install
 ```
-
-### Environment variables
-
-| Variable | Default | Description |
-|---|---|---|
-| `PORT` | `3000` | Server listen port |
-| `SESSION_SECRET` | `nib-dev-secret-change-me` | Express session secret |
-| `NODE_ENV` | - | Set to `production` for secure cookies and static file serving |
-| `DB_HOST` | `postgres.grid.local` | PostgreSQL host |
-| `DB_PORT` | `5432` | PostgreSQL port |
-| `DB_NAME` | `nib` | Database name |
-| `DB_USER` | `grid_admin` | Database user |
-| `DB_PASS` | - | Database password |
-| `OIDC_ISSUER` | `https://authelia.grid.local` | OIDC provider URL |
-| `OIDC_CLIENT_ID` | `nib` | OIDC client ID |
-| `OIDC_CLIENT_SECRET` | - | OIDC client secret |
-| `OIDC_REDIRECT_URI` | `http://draw.grid.local/auth/callback` | OIDC callback URL |
-| `OIDC_POST_LOGOUT_URI` | `http://draw.grid.local` | Post-logout redirect URL |
-
-### Database
 
 Create the database and run migrations:
 
 ```bash
 createdb nib
-
-# Safe sync (creates missing tables)
 npx tsx server/migrate.ts
-
-# Or alter existing tables to match models
-npx tsx server/migrate.ts --alter
-
-# Or drop and recreate (DESTRUCTIVE)
-npx tsx server/migrate.ts --force
 ```
 
-### Run
+Set environment variables (see [Environment variables](#environment-variables)) and start:
 
 ```bash
 # Development (server + client with hot reload)
 npm run dev
 
-# Server only
-npm run dev:server
-
-# Client only
-npm run dev:client
-
-# Production build
+# Production
 npm run build
 npm start
 ```
 
-In development, the Vite dev server runs on port 5173 and proxies `/api` and `/auth` requests to the NestJS server on port 3000.
+In development, Vite serves the client on port 5173 and proxies `/api` and `/auth` to the NestJS server on port 3000. In production, NestJS serves everything on a single port.
 
-## API Reference
+## Environment variables
 
-### Health
+| Variable | Default | Description |
+|---|---|---|
+| `PORT` | `3000` | Server listen port |
+| `SESSION_SECRET` | - | Express session secret (required) |
+| `NODE_ENV` | - | Set to `production` for secure cookies and static serving |
+| `DB_HOST` | `localhost` | PostgreSQL host |
+| `DB_PORT` | `5432` | PostgreSQL port |
+| `DB_NAME` | `nib` | Database name |
+| `DB_USER` | `nib` | Database user |
+| `DB_PASS` | - | Database password (required) |
+| `OIDC_ISSUER` | - | OIDC provider URL |
+| `OIDC_CLIENT_ID` | `nib` | OIDC client ID |
+| `OIDC_CLIENT_SECRET` | - | OIDC client secret |
+| `OIDC_REDIRECT_URI` | `http://localhost:3000/auth/callback` | OIDC callback URL |
+| `OIDC_POST_LOGOUT_URI` | `http://localhost:3000` | Post-logout redirect URL |
+| `COOKIE_SECURE` | `false` | Set to `true` behind TLS-terminating proxy |
+| `ADMIN_SUBS` | - | Comma-separated OIDC subject IDs for admin users |
+
+## Architecture
 
 ```
-GET /api/health
+client/                  React SPA (Vite + Tailwind v4 + shadcn/ui)
+  components/            NavBar, SceneCard, NewDrawingButton, UploadDrawingButton
+  components/ui/         shadcn/ui primitives (Button, Card, Badge, Tooltip)
+  contexts/              Auth state (useAuth hook)
+  pages/                 Gallery, MyDrawings, Editor
+
+server/                  NestJS API
+  auth/                  OIDC integration, guards (AuthGuard, OptionalAuthGuard, AdminGuard)
+  scenes/                Scene CRUD (controller, service, repository, validator)
+  users/                 User operations (service, repository)
+  database/              Sequelize models (User, Scene)
+  services/              Excalidraw scene structural validator
 ```
 
-Returns `{ status: "ok", service: "nib", db: "connected" | "disconnected" }`.
+See [`docs/`](docs/) for detailed documentation on [architecture](docs/architecture.md), [authentication](docs/authentication.md), [deployment](docs/deployment.md), and [development](docs/development.md).
+
+## How it works
+
+### Anonymous users
+
+Anyone can visit the gallery and create drawings without an account. Anonymous drawings are tied to the browser session (30-day TTL) — the creator can edit them, but others can only view and clone. If the session expires, the drawing becomes permanently read-only.
+
+When an anonymous user logs in, all their session-owned drawings are automatically adopted into their account.
 
 ### Authentication
 
-Authentication uses OIDC with PKCE. The server manages sessions via HTTP-only cookies (7-day expiry).
+nib uses OIDC with PKCE. Users authenticate through your identity provider (Authelia, Keycloak, Auth0, etc.) and the server manages sessions via HTTP-only cookies stored in PostgreSQL.
 
-```
-GET /auth/login      -> Redirects to OIDC provider
-GET /auth/callback   -> Handles OIDC callback, creates/updates user, sets session
-GET /auth/logout     -> Destroys session, redirects to OIDC end-session endpoint
-GET /auth/me         -> Returns current user or 401
-```
+### Drawing ownership
 
-`GET /auth/me` response (authenticated):
-```json
-{
-  "id": "uuid",
-  "sub": "oidc-subject",
-  "username": "alice"
-}
-```
+| Scenario | Can edit | Can delete | Visible in gallery |
+|---|---|---|---|
+| Authenticated owner | Yes | Yes | If public |
+| Authenticated non-owner | No | No | If public |
+| Anonymous creator (same session) | Yes | No | If public |
+| Anonymous viewer | No | No | If public |
+
+## API
 
 ### Scenes
 
-#### List public scenes (gallery)
-
 ```
-GET /api/scenes?page=1&limit=20
-```
-
-No auth required. Returns public scenes sorted by last update, with author info.
-
-```json
-{
-  "scenes": [
-    {
-      "id": "uuid",
-      "title": "My Drawing",
-      "thumbnail": null,
-      "is_public": true,
-      "created_at": "...",
-      "updated_at": "...",
-      "user": { "id": "uuid", "username": "alice", "avatar_url": null }
-    }
-  ],
-  "pagination": { "page": 1, "limit": 20, "total": 42, "pages": 3 }
-}
+GET    /api/scenes              Public gallery (paginated)
+GET    /api/scenes/my           User's drawings (requires auth)
+GET    /api/scenes/:id          Get a drawing
+POST   /api/scenes              Create drawing (JSON body)
+POST   /api/scenes/upload       Upload .excalidraw file (multipart, auth optional)
+POST   /api/scenes/validate     Validate scene data without saving
+PUT    /api/scenes/:id          Update drawing (requires ownership)
+DELETE /api/scenes/:id          Delete drawing (requires ownership)
 ```
 
-#### List my scenes
+### Auth
 
 ```
-GET /api/scenes/my?page=1&limit=20
+GET    /auth/login              Redirect to OIDC provider
+GET    /auth/callback           OIDC callback
+GET    /auth/logout             Destroy session, redirect to OIDC end-session
+GET    /auth/me                 Current user info (or 401)
 ```
 
-Requires auth. Returns the authenticated user's scenes (public and private).
-
-#### Get a scene
-
-```
-GET /api/scenes/:id
-```
-
-Public scenes are accessible to anyone. Private scenes return 404 to non-owners.
-
-Returns full scene data including the Excalidraw JSON in the `data` field.
-
-#### Create a scene
-
-```
-POST /api/scenes
-Content-Type: application/json
-
-{
-  "title": "My Drawing",
-  "data": { "elements": [...], "appState": {...}, "files": {...} },
-  "is_public": false
-}
-```
-
-Requires auth. The `data` field is validated against the Excalidraw scene schema. Title defaults to "Untitled", `is_public` defaults to `false`.
-
-Returns `201` with the created scene, or `422` with validation errors.
-
-#### Update a scene
-
-```
-PUT /api/scenes/:id
-Content-Type: application/json
-
-{
-  "title": "New Title",
-  "data": { ... },
-  "is_public": true,
-  "thumbnail": "data:image/png;base64,..."
-}
-```
-
-Requires auth + ownership. All fields are optional (partial updates). If `data` is provided, it's validated. Returns `403` if not the owner.
-
-#### Delete a scene
-
-```
-DELETE /api/scenes/:id
-```
-
-Requires auth + ownership. Returns `204` on success, `403` if not the owner.
-
-#### Validate a scene (standalone)
-
-```
-POST /api/scenes/validate
-Content-Type: application/json
-
-{ "elements": [...], "appState": {...} }
-```
-
-No auth required. Validates Excalidraw scene JSON without persisting it. Returns detailed errors.
-
-```json
-{
-  "valid": false,
-  "elementCount": 3,
-  "errors": [
-    { "path": "$.elements[2].type", "message": "Unknown element type 'foo'" }
-  ]
-}
-```
-
-Validated properties include element types, required fields (`id`, `type`, `x`, `y`, `width`, `height`), stroke/fill styles, roundness, and type-specific fields (text content, arrow points, image file references). Size limit: 50MB.
-
-#### Upload a scene file
-
-```
-POST /api/scenes/upload
-Content-Type: multipart/form-data
-
-file:      <.excalidraw or .json file>  (required)
-title:     "My Drawing"                 (optional, defaults to filename)
-is_public: "true" | "false"             (optional, see defaults below)
-```
-
-**Auth is optional.** This endpoint is designed for CLI and script usage where OIDC session cookies are impractical.
-
-| | Authenticated | Anonymous |
-|---|---|---|
-| `user_id` | Session user | `null` |
-| `is_public` default | `false` (private) | `true` (public) |
-
-The file is parsed as JSON and validated through the same pipeline as `POST /api/scenes`. Returns `201` with the created scene, `400` for missing file or invalid JSON, `422` for invalid scene data.
-
-**Examples:**
+### Upload via curl
 
 ```bash
-# Anonymous upload (public by default, no auth needed)
-curl -X POST https://draw.grid.local/api/scenes/upload \
+# Anonymous upload (public by default)
+curl -X POST http://localhost:3000/api/scenes/upload \
   -F "file=@my-drawing.excalidraw"
 
-# Anonymous upload with explicit title
-curl -X POST https://draw.grid.local/api/scenes/upload \
+# With title
+curl -X POST http://localhost:3000/api/scenes/upload \
   -F "file=@sketch.excalidraw" \
   -F "title=Architecture Diagram"
-
-# Authenticated upload (private by default)
-curl -X POST https://draw.grid.local/api/scenes/upload \
-  -F "file=@drawing.excalidraw" \
-  --cookie "nib.sid=<session-cookie>"
-
-# Authenticated upload, made public
-curl -X POST https://draw.grid.local/api/scenes/upload \
-  -F "file=@drawing.excalidraw" \
-  -F "is_public=true" \
-  --cookie "nib.sid=<session-cookie>"
 ```
-
-Anonymous scenes have no owner — they appear in the public gallery but cannot be edited or deleted via the API. File size limit: 50MB. Accepted extensions: `.excalidraw`, `.json`.
-
-## Data model
-
-### User
-
-| Field | Type | Notes |
-|---|---|---|
-| `id` | UUID | Auto-generated |
-| `sub` | TEXT | OIDC subject (unique) |
-| `username` | TEXT | Display name from OIDC |
-| `email` | TEXT | Nullable |
-| `avatar_url` | TEXT | Nullable |
-| `created_at` | TIMESTAMP | Auto-set |
-
-Users are upserted on each login (username/email/avatar updated from OIDC claims).
-
-### Scene
-
-| Field | Type | Notes |
-|---|---|---|
-| `id` | UUID | Auto-generated |
-| `user_id` | UUID | FK to users (nullable), CASCADE delete |
-| `title` | TEXT | Defaults to "Untitled" |
-| `data` | JSONB | Excalidraw scene JSON |
-| `thumbnail` | TEXT | Base64 preview (optional) |
-| `is_public` | BOOLEAN | Defaults to `false` |
-| `created_at` | TIMESTAMP | Auto-set |
-| `updated_at` | TIMESTAMP | Auto-set |
-
-When `user_id` is `null`, the scene is anonymous — created via the upload endpoint without authentication.
-
-## Client
-
-The React client provides a full drawing experience:
-
-- **`/`**, **`/gallery`** — Public gallery with paginated scene cards.
-- **`/my`** — Protected. User's own drawings with delete functionality.
-- **`/drawing/new`** — Protected. New Excalidraw editor with manual first save.
-- **`/drawing/:id`** — Excalidraw editor with autosave (3s debounce). Read-only for non-owners.
-
-The `NavBar` shows navigation links, the current username, and login/logout. The `AuthProvider` context fetches `/auth/me` on mount and exposes `{ user, loading, login(), logout(), refresh() }` via the `useAuth()` hook.
 
 ## Testing
 
 ```bash
-# Run all tests
-npm test
-
-# Watch mode
-npm run test:watch
+npm test            # Run all 130 tests
+npm run test:watch  # Watch mode
 ```
 
-Tests use Vitest with SQLite in-memory for server tests and jsdom for client tests. 88 tests across 5 files:
+Tests use Vitest with SQLite in-memory for server tests and jsdom for client tests.
 
-- `server/services/validator.test.ts` — 26 tests for scene validation
-- `server/db.test.ts` — 13 tests for models, associations, and anonymous scenes
-- `server/auth/guards/auth.guard.test.ts` — 3 tests for auth guard
-- `server/scenes/scenes.test.ts` — 40 tests for scene CRUD, upload (authenticated + anonymous), and validation
-- `client/__tests__/AuthContext.test.tsx` — 6 tests for React auth context
+| Suite | Tests | Coverage |
+|---|---|---|
+| Scene CRUD + upload + adoption | 60 | Full API integration |
+| Excalidraw scene validation | 26 | Structural validator |
+| Database models + associations | 13 | Models, cascades, anonymous scenes |
+| Auth context (React) | 6 | Client auth state |
+| NavBar (React) | 4 | Navigation rendering |
+| Protected routes (React) | 3 | Route guarding |
+| API client (React) | 12 | Scene API functions |
+| Auth guard | 3 | Request guard |
+| Auth controller | 2 | Login adoption |
+| App controller | 1 | Health endpoint |
+
+## Scripts
+
+| Script | Description |
+|---|---|
+| `npm run dev` | Start server + client with hot reload |
+| `npm run dev:server` | NestJS with `tsx watch` |
+| `npm run dev:client` | Vite dev server |
+| `npm run build` | Build client (Vite) + server (tsc) |
+| `npm start` | Run production server |
+| `npm test` | Run all tests |
+| `npm run test:watch` | Tests in watch mode |
+| `npm run migrate` | Sync database schema |
 
 ## License
 
-Private.
+MIT

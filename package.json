@@ -2,7 +2,7 @@
   "name": "nib",
   "version": "0.1.0",
   "description": "nib — powered by Excalidraw. Drawing platform with galleries, auth, and validation.",
-  "private": true,
+  "license": "MIT",
   "type": "module",
   "scripts": {
     "dev": "concurrently \"npm run dev:server\" \"npm run dev:client\"",
