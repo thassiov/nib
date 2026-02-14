@@ -2,6 +2,7 @@ import { Injectable, Inject, NotFoundException, ForbiddenException } from "@nest
 import { ScenesRepository } from "./scenes.repository.js";
 import { SceneValidatorService } from "./validator/scene-validator.service.js";
 import { SceneModel } from "../database/models/scene.model.js";
+import { generateThumbnail } from "../services/thumbnail.js";
 
 export interface ListOptions {
   filter: "public" | "mine";
@@ -108,12 +109,18 @@ export class ScenesService {
       return { validation };
     }
 
+    // Generate server-side thumbnail if none provided
+    let thumbnail = data.thumbnail ?? null;
+    if (!thumbnail) {
+      thumbnail = await generateThumbnail(data.data);
+    }
+
     const scene = await this.scenesRepository.create({
       title: data.title || "Untitled",
       data: data.data,
       is_public: data.is_public ?? false,
       user_id: userId ?? null,
-      ...(data.thumbnail && { thumbnail: data.thumbnail }),
+      ...(thumbnail && { thumbnail }),
     });
 
     return { scene };
