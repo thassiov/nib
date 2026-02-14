@@ -26,7 +26,7 @@ A self-hosted drawing platform powered by [Excalidraw](https://excalidraw.com/).
 
 ## Features
 
-- **Excalidraw editor** with autosave, manual save, cloning, and file upload
+- **Excalidraw editor** with incremental autosave, manual save, cloning, and file upload
 - **Public gallery** for sharing drawings with anyone
 - **Personal drawings** page with visibility toggles and delete
 - **Thumbnail previews** generated on save
@@ -35,6 +35,8 @@ A self-hosted drawing platform powered by [Excalidraw](https://excalidraw.com/).
 - **User roles** — admin and user roles, controlled via `ADMIN_SUBS` env var
 - **File upload API** — upload `.excalidraw` files via curl or scripts, with or without authentication
 - **Scene validation** — structural validation of Excalidraw scene data on the server
+- **Prometheus metrics** — `/metrics` endpoint with drawing, user, and process gauges for monitoring
+- **HTTP compression** — gzip/deflate for all responses
 - **Docker support** — single `docker compose up` to run everything
 
 ## Stack
@@ -139,7 +141,8 @@ server/                  NestJS API
   scenes/                Scene CRUD (controller, service, repository, validator)
   users/                 User operations (service, repository)
   database/              Sequelize models (User, Scene)
-  services/              Excalidraw scene structural validator
+  metrics/               Prometheus metrics (prom-client)
+  services/              Excalidraw scene structural validator, thumbnail generator
 ```
 
 See [`docs/`](docs/) for detailed documentation on [architecture](docs/architecture.md), [authentication](docs/authentication.md), [deployment](docs/deployment.md), and [development](docs/development.md).
@@ -176,7 +179,8 @@ GET    /api/scenes/:id          Get a drawing
 POST   /api/scenes              Create drawing (JSON body)
 POST   /api/scenes/upload       Upload .excalidraw file (multipart, auth optional)
 POST   /api/scenes/validate     Validate scene data without saving
-PUT    /api/scenes/:id          Update drawing (requires ownership)
+PUT    /api/scenes/:id          Full update (requires ownership)
+PATCH  /api/scenes/:id          Incremental update — changed elements only (requires ownership)
 DELETE /api/scenes/:id          Delete drawing (requires ownership)
 ```
 
@@ -188,6 +192,21 @@ GET    /auth/callback           OIDC callback
 GET    /auth/logout             Destroy session, redirect to OIDC end-session
 GET    /auth/me                 Current user info (or 401)
 ```
+
+### Observability
+
+```
+GET    /metrics                 Prometheus metrics (prom-client format)
+GET    /api/health              Database and OIDC connectivity check
+```
+
+The `/metrics` endpoint exposes:
+- `nib_drawings_total{visibility}` — gauge of total drawings by visibility (public/private)
+- `nib_users_total` — gauge of registered users
+- `nib_sessions_active{type}` — gauge of active sessions (authenticated/anonymous)
+- `nib_drawings_created_total{visibility}` — counter of drawings created
+- `nib_drawings_deleted_total` — counter of drawings deleted
+- Default Node.js process metrics (CPU, memory, event loop, GC)
 
 ### Upload via curl
 
@@ -205,7 +224,7 @@ curl -X POST http://localhost:3000/api/scenes/upload \
 ## Testing
 
 ```bash
-npm test            # Run all 130 tests
+npm test            # Run all 148 tests
 npm run test:watch  # Watch mode
 ```
 
@@ -213,13 +232,14 @@ Tests use Vitest with SQLite in-memory for server tests and jsdom for client tes
 
 | Suite | Tests | Coverage |
 |---|---|---|
-| Scene CRUD + upload + adoption | 60 | Full API integration |
+| Scene CRUD + upload + patch + adoption | 71 | Full API integration |
 | Excalidraw scene validation | 26 | Structural validator |
 | Database models + associations | 13 | Models, cascades, anonymous scenes |
+| API client (React) | 12 | Scene API functions |
+| Prometheus metrics | 7 | Gauges, counters, process metrics |
 | Auth context (React) | 6 | Client auth state |
 | NavBar (React) | 4 | Navigation rendering |
 | Protected routes (React) | 3 | Route guarding |
-| API client (React) | 12 | Scene API functions |
 | Auth guard | 3 | Request guard |
 | Auth controller | 2 | Login adoption |
 | App controller | 1 | Health endpoint |

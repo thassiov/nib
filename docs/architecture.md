@@ -28,7 +28,9 @@ The server uses NestJS 11 with the Express platform adapter (`@nestjs/platform-e
 ### Entry point
 
 `server/main.ts` bootstraps the NestJS application with:
+- HTTP response compression (gzip/deflate via `compression` middleware)
 - Session middleware with PostgreSQL-backed store (`connect-pg-simple`) in production, in-memory fallback in development
+- Session middleware skip for `/metrics` path (prevents Prometheus scrapes from creating anonymous sessions)
 - HTTP-only cookies (`nib.sid`, 30-day expiry, `sameSite: lax`)
 - JSON body parsing (50MB limit for large drawings)
 - Trust proxy (for reverse proxy setups)
@@ -41,6 +43,7 @@ AppModule
   ├── UsersModule         User CRUD (service + repository)
   ├── AuthModule          OIDC login/logout, guards, scene adoption
   ├── ScenesModule        Scene CRUD, validation (controller + service + repository)
+  ├── MetricsModule       Prometheus metrics (prom-client gauges + counters)
   └── ServeStaticModule   Client files in production (conditional)
 ```
 
@@ -128,8 +131,12 @@ Validation runs on create and update. The standalone `POST /api/scenes/validate`
 - `POST /api/scenes` — Create scene from JSON (auth optional; anonymous scenes tracked in session).
 - `POST /api/scenes/upload` — Upload `.excalidraw`/`.json` file (auth optional).
 - `POST /api/scenes/validate` — Validate scene data without saving.
-- `PUT /api/scenes/:id` — Update scene (requires ownership — authenticated or session-based).
+- `PUT /api/scenes/:id` — Full update (requires ownership — authenticated or session-based).
+- `PATCH /api/scenes/:id` — Incremental update with element-level diffing (requires ownership). Accepts `{ elements: { upserts: [...], deletes: [...] }, appState?, files?, thumbnail? }`.
 - `DELETE /api/scenes/:id` — Delete scene (requires auth + ownership).
+
+**Observability:**
+- `GET /metrics` — Prometheus metrics endpoint (excluded from session middleware and SPA catch-all).
 
 **Other:**
 - `GET /api/health` — Database connectivity check.
@@ -157,6 +164,29 @@ Anonymous users can create and edit drawings without an account. Ownership is tr
 | On session expire | Still owns via `user_id` | Permanently read-only |
 
 When an anonymous user logs in via OIDC, `auth.controller.ts` calls `scenesRepository.adoptByIds(session.ownedScenes, user.id)` to set `user_id` on all session-owned scenes, then clears `session.ownedScenes`.
+
+### Metrics
+
+`server/metrics/` provides a Prometheus-compatible `/metrics` endpoint using `prom-client`.
+
+- `metrics.service.ts` — Injectable service managing all custom metrics. Queries the database for gauge values (total drawings, users, sessions) and exposes counter increment methods.
+- `metrics.controller.ts` — `GET /metrics` returns all metrics in Prometheus text format.
+- `metrics.module.ts` — Imports `SequelizeModule.forFeature()` for database access.
+
+**Gauges** (queried from database on each scrape):
+- `nib_drawings_total{visibility="public|private"}` — count of drawings by visibility
+- `nib_users_total` — count of registered users
+- `nib_sessions_active{type="authenticated|anonymous"}` — count of active sessions (uses `sess::jsonb->>'userId'` to classify)
+
+**Counters** (incremented in-process):
+- `nib_drawings_created_total{visibility="public|private"}` — drawings created since last restart
+- `nib_drawings_deleted_total` — drawings deleted since last restart
+
+**Default metrics** — `prom-client`'s `collectDefaultMetrics()` provides Node.js process metrics (CPU, memory, event loop lag, GC).
+
+The `/metrics` path is excluded from session middleware in `main.ts` (prevents Prometheus scrapes from creating anonymous sessions) and from the SPA catch-all in `app.module.ts`.
+
+`ScenesService` calls `metricsService.incDrawingCreated()` and `metricsService.incDrawingDeleted()` on create/delete to keep counters accurate.
 
 ### Dependency injection note
 
@@ -252,7 +282,7 @@ Always visible at the top. Shows:
 
 The editor wraps `@excalidraw/excalidraw` with:
 - **Toolbar** showing title (click to rename), visibility badge (Public/Private), and save status
-- **Autosave** on a 5-second interval, only fires when content is dirty (element reference comparison)
+- **Incremental autosave** — debounced (30s after last change), sends only changed elements via `PATCH` using element-level version diffing. Tracks per-element `version` fields in a `Map<string, number>` to detect upserts and deletes. Manual save (`Ctrl+S`) and unmount flush still use full `PUT` as a safety net.
 - **Thumbnail generation** via `exportToBlob()` on each save
 - **Custom MainMenu** with Save, Make Public/Private, Make a Copy, Upload New Drawing, Export, gallery/drawings links, theme toggle, and login (for anonymous users)
 - **Anonymous → login prompt** when clicking "Make Private" without an account
@@ -269,14 +299,15 @@ Tests run with Vitest. Server tests use NestJS `Test.createTestingModule()` with
 
 All test files run sequentially (`isolate: false` with `pool: "forks"`) because server tests share state within their respective test suites.
 
-130 tests across 10 files:
+148 tests across 11 files:
 
 | File | Tests | Coverage |
 |---|---|---|
-| `server/scenes/scenes.test.ts` | 60 | Scene CRUD, upload, adoption, ownership, validation |
+| `server/scenes/scenes.test.ts` | 71 | Scene CRUD, upload, incremental patch, adoption, ownership, validation |
 | `server/services/validator.test.ts` | 26 | Excalidraw scene structural validation |
 | `server/db.test.ts` | 13 | Models, associations, cascade delete, anonymous scenes |
 | `client/__tests__/api-scenes.test.tsx` | 12 | Scene API client functions |
+| `server/metrics/metrics.test.ts` | 7 | Prometheus gauges, counters, process metrics |
 | `client/__tests__/AuthContext.test.tsx` | 6 | Client auth state management |
 | `client/__tests__/NavBar.test.tsx` | 4 | Navigation rendering |
 | `client/__tests__/ProtectedRoute.test.tsx` | 3 | Route guarding |

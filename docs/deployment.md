@@ -223,6 +223,42 @@ Returns:
 
 The health endpoint checks database connectivity via `Sequelize.authenticate()` and OIDC provider reachability. If the database is unreachable, it returns `"db": "disconnected"` but still responds with status `"ok"` (the server itself is running).
 
+## Observability
+
+nib exposes a Prometheus-compatible `/metrics` endpoint that can be scraped by any Prometheus-compatible collector (Prometheus, Grafana Alloy, Victoria Metrics, etc.).
+
+### Prometheus scrape config
+
+```yaml
+scrape_configs:
+  - job_name: nib
+    static_configs:
+      - targets: ['localhost:3000']
+    scrape_interval: 15s
+```
+
+### Available metrics
+
+| Metric | Type | Labels | Description |
+|---|---|---|---|
+| `nib_drawings_total` | Gauge | `visibility` (public/private) | Total drawings in database |
+| `nib_users_total` | Gauge | - | Total registered users |
+| `nib_sessions_active` | Gauge | `type` (authenticated/anonymous) | Active sessions |
+| `nib_drawings_created_total` | Counter | `visibility` (public/private) | Drawings created since restart |
+| `nib_drawings_deleted_total` | Counter | - | Drawings deleted since restart |
+
+Default Node.js process metrics (CPU, memory, event loop, GC) are also exposed via `prom-client`.
+
+### Grafana dashboard
+
+A pre-built Grafana dashboard is available with panels for application overview (drawings, users, sessions), activity timeseries (creation/deletion rates), process health (CPU, memory, event loop), and log aggregation (via Loki).
+
+### Notes
+
+- The `/metrics` endpoint skips session middleware to prevent scrape requests from creating anonymous sessions.
+- The endpoint is excluded from the SPA catch-all so it returns Prometheus text format, not the React app.
+- Session counts use a raw SQL query (`sess::jsonb->>'userId'`) to classify sessions as authenticated or anonymous.
+
 ## Backups
 
 nib stores all drawing data in PostgreSQL. Back up the `nib` database:

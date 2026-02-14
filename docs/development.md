@@ -81,7 +81,7 @@ nib/
     __tests__/                  Client tests (jsdom)
 
   server/                      NestJS API
-    main.ts                    Bootstrap (session store, body parser, trust proxy)
+    main.ts                    Bootstrap (compression, session store, body parser, trust proxy)
     app.module.ts              Root module (imports all feature modules)
     app.controller.ts          GET /api/health, POST /api/log
 
@@ -119,8 +119,15 @@ nib/
       users.service.ts         User operations (upsert with role, find)
       users.repository.ts      Data access with @InjectModel
 
+    metrics/
+      metrics.module.ts        Prometheus metrics module
+      metrics.service.ts       Gauges (drawings, users, sessions) + counters (created, deleted)
+      metrics.controller.ts    GET /metrics endpoint
+      metrics.test.ts          Metrics integration tests
+
     services/
       validator.ts             Excalidraw scene structural validator
+      thumbnail.ts             Server-side thumbnail generation (Excalidraw → SVG → PNG via sharp)
 
     __tests__/
       setup.ts                 Shared SQLite Sequelize for model-level tests
@@ -174,14 +181,15 @@ All test files run sequentially in a single fork (`isolate: false`) because serv
 
 ### Test suites
 
-130 tests across 10 files:
+148 tests across 11 files:
 
 | File | Tests | What it covers |
 |---|---|---|
-| `server/scenes/scenes.test.ts` | 60 | Scene CRUD, upload, adoption, anonymous ownership, validation |
+| `server/scenes/scenes.test.ts` | 71 | Scene CRUD, upload, incremental patch, adoption, anonymous ownership, validation |
 | `server/services/validator.test.ts` | 26 | Excalidraw scene structural validation |
 | `server/db.test.ts` | 13 | Model creation, associations, cascade delete, anonymous scenes |
 | `client/__tests__/api-scenes.test.tsx` | 12 | Scene API client functions |
+| `server/metrics/metrics.test.ts` | 7 | Prometheus gauges, counters, default process metrics |
 | `client/__tests__/AuthContext.test.tsx` | 6 | Client-side auth state management |
 | `client/__tests__/NavBar.test.tsx` | 4 | Navigation rendering (brand, links, login/logout) |
 | `client/__tests__/ProtectedRoute.test.tsx` | 3 | Route guarding (loading, redirect, render) |
