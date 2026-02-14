@@ -3,6 +3,7 @@ import { ScenesRepository } from "./scenes.repository.js";
 import { SceneValidatorService } from "./validator/scene-validator.service.js";
 import { SceneModel } from "../database/models/scene.model.js";
 import { generateThumbnail } from "../services/thumbnail.js";
+import { MetricsService } from "../metrics/metrics.service.js";
 
 export interface ListOptions {
   filter: "public" | "mine";
@@ -26,6 +27,7 @@ export class ScenesService {
   constructor(
     @Inject(ScenesRepository) private readonly scenesRepository: ScenesRepository,
     @Inject(SceneValidatorService) private readonly sceneValidator: SceneValidatorService,
+    @Inject(MetricsService) private readonly metricsService: MetricsService,
   ) {}
 
   /**
@@ -115,13 +117,16 @@ export class ScenesService {
       thumbnail = await generateThumbnail(data.data);
     }
 
+    const isPublic = data.is_public ?? false;
     const scene = await this.scenesRepository.create({
       title: data.title || "Untitled",
       data: data.data,
-      is_public: data.is_public ?? false,
+      is_public: isPublic,
       user_id: userId ?? null,
       ...(thumbnail && { thumbnail }),
     });
+
+    this.metricsService.incDrawingCreated(isPublic);
 
     return { scene };
   }
@@ -178,6 +183,7 @@ export class ScenesService {
     }
 
     await this.scenesRepository.delete(scene);
+    this.metricsService.incDrawingDeleted();
   }
 
   /**

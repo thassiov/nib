@@ -13,6 +13,7 @@ import { AuthModule } from "../auth/auth.module.js";
 import { ScenesModule } from "../scenes/scenes.module.js";
 import { UsersModule } from "../users/users.module.js";
 import { AppController } from "../app.controller.js";
+import { MetricsModule } from "../metrics/metrics.module.js";
 
 /**
  * Creates a NestJS test application backed by a fresh SQLite in-memory DB.
@@ -32,6 +33,7 @@ export async function createTestApp(): Promise<INestApplication> {
       UsersModule,
       AuthModule,
       ScenesModule,
+      MetricsModule,
     ],
     controllers: [AppController],
   }).compile();
@@ -79,6 +81,7 @@ export async function createAuthenticatedTestApp(
       UsersModule,
       AuthModule,
       ScenesModule,
+      MetricsModule,
     ],
     controllers: [AppController],
   }).compile();
