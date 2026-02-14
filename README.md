@@ -2,6 +2,28 @@
 
 A self-hosted drawing platform powered by [Excalidraw](https://excalidraw.com/). Create, save, and share drawings with authentication, persistent storage, and galleries.
 
+## Screenshots
+
+**Public gallery** — browse drawings without an account, with server-generated thumbnails
+
+![Public gallery](docs/screenshots/gallery-anonymous.png)
+
+**Editor** — full Excalidraw editor with autosave, visibility badges, and drawing tools
+
+![Editor (anonymous, editing)](docs/screenshots/editor-anonymous.png)
+
+**Read-only view** — non-owners see a "View only" badge and can clone but not edit
+
+![Editor (read-only, anonymous)](docs/screenshots/editor-readonly-anonymous.png)
+
+**My Drawings** — authenticated users see their own drawings with visibility and delete controls
+
+![My Drawings](docs/screenshots/my-drawings-detail.png)
+
+**Private drawings** — authenticated users can create private drawings with image support
+
+![Editor (authenticated, private)](docs/screenshots/editor-authenticated.png)
+
 ## Features
 
 - **Excalidraw editor** with autosave, manual save, cloning, and file upload
