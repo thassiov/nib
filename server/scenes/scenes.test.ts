@@ -712,6 +712,230 @@ describe("Scene routes", () => {
     });
   });
 
+  // ========== Patch (incremental save) ==========
+
+  describe("PATCH /api/scenes/:id (incremental save)", () => {
+    const SCENE_WITH_TWO_ELEMENTS = {
+      elements: [
+        { id: "el-1", type: "rectangle", x: 0, y: 0, width: 100, height: 50, version: 1 },
+        { id: "el-2", type: "ellipse", x: 50, y: 50, width: 80, height: 80, version: 1 },
+      ],
+      appState: {},
+      files: {},
+    };
+
+    it("upserts new elements into the scene", async () => {
+      app = await createAuthenticatedTestApp({ userId: ALICE_ID });
+      await seedAlice(app);
+      const scene = await getSceneModel(app).create({
+        user_id: ALICE_ID, title: "Patch Test", data: VALID_SCENE, is_public: false,
+      });
+
+      const res = await request(app.getHttpServer())
+        .patch(`/api/scenes/${scene.id}`)
+        .send({
+          elements: {
+            upserts: [{ id: "new-el", type: "diamond", x: 10, y: 10, width: 50, height: 50, version: 1 }],
+            deletes: [],
+          },
+        });
+
+      expect(res.status).toBe(200);
+      const elements = res.body.data.elements;
+      expect(elements.length).toBe(2); // original rect1 + new-el
+      expect(elements.find((e: any) => e.id === "rect1")).toBeTruthy();
+      expect(elements.find((e: any) => e.id === "new-el")).toBeTruthy();
+    });
+
+    it("updates existing elements (upsert replaces by ID)", async () => {
+      app = await createAuthenticatedTestApp({ userId: ALICE_ID });
+      await seedAlice(app);
+      const scene = await getSceneModel(app).create({
+        user_id: ALICE_ID, title: "Patch Test", data: SCENE_WITH_TWO_ELEMENTS, is_public: false,
+      });
+
+      const res = await request(app.getHttpServer())
+        .patch(`/api/scenes/${scene.id}`)
+        .send({
+          elements: {
+            upserts: [{ id: "el-1", type: "rectangle", x: 999, y: 999, width: 100, height: 50, version: 2 }],
+            deletes: [],
+          },
+        });
+
+      expect(res.status).toBe(200);
+      const elements = res.body.data.elements;
+      expect(elements.length).toBe(2); // still 2 — replaced, not added
+      const updated = elements.find((e: any) => e.id === "el-1");
+      expect(updated.x).toBe(999);
+      expect(updated.version).toBe(2);
+    });
+
+    it("deletes elements by ID", async () => {
+      app = await createAuthenticatedTestApp({ userId: ALICE_ID });
+      await seedAlice(app);
+      const scene = await getSceneModel(app).create({
+        user_id: ALICE_ID, title: "Patch Test", data: SCENE_WITH_TWO_ELEMENTS, is_public: false,
+      });
+
+      const res = await request(app.getHttpServer())
+        .patch(`/api/scenes/${scene.id}`)
+        .send({
+          elements: {
+            upserts: [],
+            deletes: ["el-2"],
+          },
+        });
+
+      expect(res.status).toBe(200);
+      const elements = res.body.data.elements;
+      expect(elements.length).toBe(1);
+      expect(elements[0].id).toBe("el-1");
+    });
+
+    it("handles upserts and deletes in a single patch", async () => {
+      app = await createAuthenticatedTestApp({ userId: ALICE_ID });
+      await seedAlice(app);
+      const scene = await getSceneModel(app).create({
+        user_id: ALICE_ID, title: "Patch Test", data: SCENE_WITH_TWO_ELEMENTS, is_public: false,
+      });
+
+      const res = await request(app.getHttpServer())
+        .patch(`/api/scenes/${scene.id}`)
+        .send({
+          elements: {
+            upserts: [{ id: "el-3", type: "arrow", x: 0, y: 0, width: 200, height: 0, version: 1 }],
+            deletes: ["el-1"],
+          },
+        });
+
+      expect(res.status).toBe(200);
+      const elements = res.body.data.elements;
+      expect(elements.length).toBe(2); // el-2 kept, el-3 added, el-1 deleted
+      const ids = elements.map((e: any) => e.id).sort();
+      expect(ids).toEqual(["el-2", "el-3"]);
+    });
+
+    it("updates appState and files when provided", async () => {
+      app = await createAuthenticatedTestApp({ userId: ALICE_ID });
+      await seedAlice(app);
+      const scene = await getSceneModel(app).create({
+        user_id: ALICE_ID, title: "Patch Test", data: VALID_SCENE, is_public: false,
+      });
+
+      const res = await request(app.getHttpServer())
+        .patch(`/api/scenes/${scene.id}`)
+        .send({
+          elements: { upserts: [], deletes: [] },
+          appState: { viewBackgroundColor: "#ff0000" },
+          files: { "file-1": { mimeType: "image/png", dataURL: "data:image/png;base64,abc" } },
+        });
+
+      expect(res.status).toBe(200);
+      expect(res.body.data.appState.viewBackgroundColor).toBe("#ff0000");
+      expect(res.body.data.files["file-1"]).toBeTruthy();
+    });
+
+    it("updates thumbnail when provided", async () => {
+      app = await createAuthenticatedTestApp({ userId: ALICE_ID });
+      await seedAlice(app);
+      const scene = await getSceneModel(app).create({
+        user_id: ALICE_ID, title: "Patch Test", data: VALID_SCENE, is_public: false,
+      });
+
+      const thumb = "data:image/png;base64,newThumbData";
+      const res = await request(app.getHttpServer())
+        .patch(`/api/scenes/${scene.id}`)
+        .send({
+          elements: { upserts: [], deletes: [] },
+          thumbnail: thumb,
+        });
+
+      expect(res.status).toBe(200);
+      expect(res.body.thumbnail).toBe(thumb);
+    });
+
+    it("returns 403 for scene owned by someone else", async () => {
+      app = await createAuthenticatedTestApp({ userId: "other-user-id" });
+      const user = await seedAlice(app);
+      const scene = await getSceneModel(app).create({
+        user_id: user.id, title: "Alice's", data: VALID_SCENE,
+      });
+
+      const res = await request(app.getHttpServer())
+        .patch(`/api/scenes/${scene.id}`)
+        .send({
+          elements: { upserts: [], deletes: [] },
+        });
+
+      expect(res.status).toBe(403);
+    });
+
+    it("returns 404 for non-existent scene", async () => {
+      app = await createAuthenticatedTestApp({ userId: ALICE_ID });
+      await seedAlice(app);
+
+      const res = await request(app.getHttpServer())
+        .patch("/api/scenes/00000000-0000-0000-0000-000000000000")
+        .send({
+          elements: { upserts: [], deletes: [] },
+        });
+
+      expect(res.status).toBe(404);
+    });
+
+    it("returns 400 when elements field is missing", async () => {
+      app = await createAuthenticatedTestApp({ userId: ALICE_ID });
+      await seedAlice(app);
+      const scene = await getSceneModel(app).create({
+        user_id: ALICE_ID, title: "Patch Test", data: VALID_SCENE,
+      });
+
+      const res = await request(app.getHttpServer())
+        .patch(`/api/scenes/${scene.id}`)
+        .send({ appState: {} });
+
+      expect(res.status).toBe(400);
+      expect(res.body.error).toMatch(/elements/i);
+    });
+
+    it("returns 400 when elements.upserts is missing", async () => {
+      app = await createAuthenticatedTestApp({ userId: ALICE_ID });
+      await seedAlice(app);
+      const scene = await getSceneModel(app).create({
+        user_id: ALICE_ID, title: "Patch Test", data: VALID_SCENE,
+      });
+
+      const res = await request(app.getHttpServer())
+        .patch(`/api/scenes/${scene.id}`)
+        .send({ elements: { deletes: [] } });
+
+      expect(res.status).toBe(400);
+    });
+
+    it("anonymous user can patch scene they created (via session)", async () => {
+      app = await createTestApp();
+      const agent = request.agent(app.getHttpServer());
+
+      const createRes = await agent.post("/api/scenes").send({ data: SCENE_WITH_TWO_ELEMENTS, title: "Anon Patch" });
+      expect(createRes.status).toBe(201);
+      const sceneId = createRes.body.id;
+
+      const patchRes = await agent
+        .patch(`/api/scenes/${sceneId}`)
+        .send({
+          elements: {
+            upserts: [{ id: "el-1", type: "rectangle", x: 500, y: 500, width: 100, height: 50, version: 3 }],
+            deletes: [],
+          },
+        });
+
+      expect(patchRes.status).toBe(200);
+      const el = patchRes.body.data.elements.find((e: any) => e.id === "el-1");
+      expect(el.x).toBe(500);
+    });
+  });
+
   // ========== Scene adoption on login ==========
 
   describe("Scene adoption (adoptByIds)", () => {

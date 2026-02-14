@@ -28,6 +28,7 @@
     "class-validator": "^0.14.3",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
+    "compression": "^1.8.1",
     "connect-pg-simple": "^10.0.0",
     "express-session": "^1.18.0",
     "jsdom": "^28.0.0",
@@ -51,6 +52,7 @@
   "devDependencies": {
     "@testing-library/jest-dom": "^6.9.1",
     "@testing-library/react": "^16.3.2",
+    "@types/compression": "^1.8.1",
     "@types/connect-pg-simple": "^7.0.3",
     "@types/express": "^5.0.6",
     "@types/express-session": "^1.18.0",

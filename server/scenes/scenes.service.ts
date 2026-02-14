@@ -169,6 +169,65 @@ export class ScenesService {
   }
 
   /**
+   * Incremental update: merge upserted elements and remove deleted ones.
+   * Much more efficient than replacing the entire scene on every autosave.
+   */
+  async patchElements(
+    id: string,
+    patch: {
+      elements: { upserts: Array<{ id: string; [k: string]: unknown }>; deletes: string[] };
+      appState?: Record<string, unknown>;
+      files?: Record<string, unknown>;
+      thumbnail?: string;
+    },
+    userId?: string,
+    ownedScenes?: string[],
+  ): Promise<{ scene?: SceneModel }> {
+    const scene = await this.scenesRepository.findById(id);
+
+    if (!scene) {
+      throw new NotFoundException("Scene not found");
+    }
+
+    if (!this.canModify(scene, userId, ownedScenes)) {
+      throw new ForbiddenException("Not authorized to modify this scene");
+    }
+
+    // Merge elements: index existing by ID, apply upserts, remove deletes
+    const data = (scene.data || {}) as Record<string, unknown>;
+    const existingElements = (data.elements || []) as Array<{ id: string; [k: string]: unknown }>;
+
+    const elementMap = new Map<string, { id: string; [k: string]: unknown }>();
+    for (const el of existingElements) {
+      elementMap.set(el.id, el);
+    }
+
+    // Apply upserts (insert or replace by ID)
+    for (const el of patch.elements.upserts) {
+      elementMap.set(el.id, el);
+    }
+
+    // Apply deletes
+    for (const deleteId of patch.elements.deletes) {
+      elementMap.delete(deleteId);
+    }
+
+    // Rebuild the data object
+    const newData: Record<string, unknown> = {
+      ...data,
+      elements: Array.from(elementMap.values()),
+    };
+    if (patch.appState !== undefined) newData.appState = patch.appState;
+    if (patch.files !== undefined) newData.files = patch.files;
+
+    const updatePayload: any = { data: newData };
+    if (patch.thumbnail !== undefined) updatePayload.thumbnail = patch.thumbnail;
+
+    const updated = await this.scenesRepository.update(scene, updatePayload);
+    return { scene: updated };
+  }
+
+  /**
    * Delete a scene. Requires ownership via user_id or session ownedScenes.
    */
   async delete(id: string, userId?: string, ownedScenes?: string[]): Promise<void> {

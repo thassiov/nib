@@ -3,6 +3,7 @@ import {
   Get,
   Post,
   Put,
+  Patch,
   Delete,
   Body,
   Param,
@@ -250,6 +251,38 @@ export class ScenesController {
       });
       return;
     }
+
+    res.json(result.scene);
+  }
+
+  /**
+   * PATCH /api/scenes/:id
+   * Incremental update: merge changed elements into the stored scene.
+   * Sends only upserted/deleted elements instead of the full scene.
+   * Body: { elements: { upserts: [...], deletes: [...] }, appState?, files?, thumbnail? }
+   */
+  @Patch(":id")
+  @UseGuards(OptionalAuthGuard)
+  async patch(
+    @Param("id") id: string,
+    @Body() body: any,
+    @Req() req: Request,
+    @Res() res: Response,
+  ) {
+    const session = (req as any).session;
+    const { elements, appState, files, thumbnail } = body;
+
+    if (!elements?.upserts || !elements?.deletes) {
+      res.status(400).json({ error: "Body must include elements.upserts and elements.deletes" });
+      return;
+    }
+
+    const result = await this.scenesService.patchElements(
+      id,
+      { elements, appState, files, thumbnail },
+      session?.userId,
+      session?.ownedScenes,
+    );
 
     res.json(result.scene);
   }

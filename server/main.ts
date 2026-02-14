@@ -1,6 +1,7 @@
 import "reflect-metadata";
 import { NestFactory } from "@nestjs/core";
 import { NestExpressApplication } from "@nestjs/platform-express";
+import compression from "compression";
 import session from "express-session";
 import connectPgSimple from "connect-pg-simple";
 import pg from "pg";
@@ -13,6 +14,9 @@ async function bootstrap() {
 
   // Trust reverse proxy (nginx)
   app.set("trust proxy", 1);
+
+  // Enable gzip/deflate compression for all responses
+  app.use(compression());
 
   // Session store: PostgreSQL in production, in-memory for dev/test
   const sessionConfig: session.SessionOptions = {

@@ -4,12 +4,12 @@ import { Excalidraw, MainMenu, exportToBlob } from "@excalidraw/excalidraw";
 import "@excalidraw/excalidraw/index.css";
 import type { ExcalidrawImperativeAPI } from "@excalidraw/excalidraw/types";
 import { useAuth } from "../contexts/AuthContext";
-import { getScene, createScene, updateScene } from "../api/scenes";
+import { getScene, createScene, updateScene, patchScene } from "../api/scenes";
 import type { SceneDetail } from "../api/scenes";
 import { logger } from "../api/logger";
 import { Badge } from "../components/ui/badge";
 
-const SYNC_INTERVAL_MS = 5000;
+const AUTOSAVE_DEBOUNCE_MS = 30_000;
 
 export function Editor() {
   const { id } = useParams<{ id: string }>();
@@ -26,10 +26,14 @@ export function Editor() {
   const [lastSaved, setLastSaved] = useState<Date | null>(null);
   const [editingTitle, setEditingTitle] = useState(false);
 
-  // Snapshot of elements at last sync (for dirty detection)
-  const lastSyncedElementsRef = useRef<readonly any[] | null>(null);
+  // Track element versions at last sync for incremental diffing
+  const lastSyncedVersionsRef = useRef<Map<string, number>>(new Map());
   // Ref to api for use in interval/cleanup without stale closures
   const apiRef = useRef<ExcalidrawImperativeAPI | null>(null);
+  // Debounce timer ref
+  const autosaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Track whether we have unsaved changes (for onChange debounce trigger)
+  const hasPendingChangesRef = useRef(false);
 
   // Keep apiRef in sync
   useEffect(() => {
@@ -51,6 +55,13 @@ export function Editor() {
         setScene(data);
         setTitle(data.title);
         setIsPublic(data.is_public);
+        // Snapshot initial element versions for incremental diffing
+        const elements = (data.data?.elements || []) as Array<{ id: string; version: number }>;
+        const versionMap = new Map<string, number>();
+        for (const el of elements) {
+          if (el.id && el.version !== undefined) versionMap.set(el.id, el.version);
+        }
+        lastSyncedVersionsRef.current = versionMap;
         setLoading(false);
         logger.info("Editor: scene loaded", { id: data.id, title: data.title });
       })
@@ -83,15 +94,53 @@ export function Editor() {
     };
   }, [sanitizeAppState]);
 
+  // Compute the incremental diff: elements that changed or were deleted since last sync
+  const getElementDiff = useCallback(() => {
+    const currentApi = apiRef.current;
+    if (!currentApi) return null;
+
+    const currentElements = currentApi.getSceneElements() as Array<{ id: string; version: number; isDeleted?: boolean; [k: string]: unknown }>;
+    const lastVersions = lastSyncedVersionsRef.current;
+
+    const upserts: unknown[] = [];
+    const currentIds = new Set<string>();
+
+    for (const el of currentElements) {
+      currentIds.add(el.id);
+      const lastVersion = lastVersions.get(el.id);
+      if (lastVersion === undefined || el.version > lastVersion) {
+        upserts.push(el);
+      }
+    }
+
+    // Elements that were in the last sync but are no longer present
+    const deletes: string[] = [];
+    for (const id of lastVersions.keys()) {
+      if (!currentIds.has(id)) {
+        deletes.push(id);
+      }
+    }
+
+    if (upserts.length === 0 && deletes.length === 0) return null;
+    return { upserts, deletes };
+  }, []);
+
+  // Snapshot current element versions into the tracking map
+  const snapshotVersions = useCallback(() => {
+    const currentApi = apiRef.current;
+    if (!currentApi) return;
+    const elements = currentApi.getSceneElements() as Array<{ id: string; version: number }>;
+    const map = new Map<string, number>();
+    for (const el of elements) {
+      map.set(el.id, el.version);
+    }
+    lastSyncedVersionsRef.current = map;
+  }, []);
+
   // Check if elements have changed since last sync
   const isDirty = useCallback(() => {
-    const currentApi = apiRef.current;
-    if (!currentApi) return false;
-    const currentElements = currentApi.getSceneElements();
-    if (!lastSyncedElementsRef.current) return currentElements.length > 0;
-    if (currentElements.length !== lastSyncedElementsRef.current.length) return true;
-    return currentElements !== lastSyncedElementsRef.current;
-  }, []);
+    return getElementDiff() !== null;
+  }, [getElementDiff]);
 
   // Generate a small PNG thumbnail as a base64 data URL
   const generateThumbnail = useCallback(async (): Promise<string | null> => {
@@ -125,7 +174,7 @@ export function Editor() {
     }
   }, []);
 
-  // Core save function
+  // Full save (manual save, unmount flush)
   const doSave = useCallback(async () => {
     const currentApi = apiRef.current;
     if (!currentApi || readOnly || !id) return;
@@ -137,7 +186,8 @@ export function Editor() {
     try {
       const thumbnail = await generateThumbnail();
       await updateScene(id, { data: sceneData, ...(thumbnail && { thumbnail }) });
-      lastSyncedElementsRef.current = currentApi.getSceneElements();
+      snapshotVersions();
+      hasPendingChangesRef.current = false;
       setLastSaved(new Date());
       logger.info("Editor: scene saved", { id });
     } catch (err) {
@@ -145,49 +195,68 @@ export function Editor() {
     } finally {
       setSaving(false);
     }
-  }, [readOnly, id, getSceneData, generateThumbnail]);
+  }, [readOnly, id, getSceneData, generateThumbnail, snapshotVersions]);
 
-  // 5-second sync interval
-  useEffect(() => {
+  // Incremental save (autosave — only changed elements)
+  const doIncrementalSave = useCallback(async () => {
+    const currentApi = apiRef.current;
+    if (!currentApi || readOnly || !id) return;
+
+    const diff = getElementDiff();
+    if (!diff) return;
+
+    setSaving(true);
+    try {
+      const thumbnail = await generateThumbnail();
+      await patchScene(id, {
+        elements: diff,
+        appState: sanitizeAppState(currentApi.getAppState() as Record<string, unknown>),
+        files: currentApi.getFiles() as Record<string, unknown>,
+        ...(thumbnail && { thumbnail }),
+      });
+      snapshotVersions();
+      hasPendingChangesRef.current = false;
+      setLastSaved(new Date());
+      logger.info("Editor: autosaved (incremental)", {
+        id,
+        upserts: diff.upserts.length,
+        deletes: diff.deletes.length,
+      });
+    } catch (err) {
+      // If incremental save fails, fall back to full save next time
+      logger.error("Editor: incremental save failed, will retry", { error: String(err) });
+    } finally {
+      setSaving(false);
+    }
+  }, [readOnly, id, getElementDiff, generateThumbnail, sanitizeAppState, snapshotVersions]);
+
+  // Debounced autosave: triggers 30s after the last change
+  const scheduleAutosave = useCallback(() => {
     if (readOnly) return;
+    if (autosaveTimerRef.current) clearTimeout(autosaveTimerRef.current);
+    hasPendingChangesRef.current = true;
+    autosaveTimerRef.current = setTimeout(() => {
+      autosaveTimerRef.current = null;
+      doIncrementalSave();
+    }, AUTOSAVE_DEBOUNCE_MS);
+  }, [readOnly, doIncrementalSave]);
 
-    const interval = setInterval(async () => {
-      if (isDirty()) {
-        const currentApi = apiRef.current;
-        if (!currentApi) return;
+  // Clean up the debounce timer on unmount
+  useEffect(() => {
+    return () => {
+      if (autosaveTimerRef.current) clearTimeout(autosaveTimerRef.current);
+    };
+  }, []);
 
-        const sceneData = {
-          elements: currentApi.getSceneElements(),
-          appState: sanitizeAppState(currentApi.getAppState() as Record<string, unknown>),
-          files: currentApi.getFiles(),
-        };
-
-        try {
-          const thumbnail = await generateThumbnail();
-          await updateScene(id!, { data: sceneData, ...(thumbnail && { thumbnail }) });
-          lastSyncedElementsRef.current = currentApi.getSceneElements();
-          setLastSaved(new Date());
-          logger.info("Editor: autosaved", { id });
-        } catch (err) {
-          logger.error("Editor: autosave failed", { error: String(err) });
-        }
-      }
-    }, SYNC_INTERVAL_MS);
-
-    return () => clearInterval(interval);
-  }, [id, readOnly, isDirty, generateThumbnail, sanitizeAppState]);
-
-  // Flush on unmount if dirty
+  // Flush on unmount if dirty (full save for safety)
   useEffect(() => {
     const sceneId = id;
     return () => {
+      if (autosaveTimerRef.current) clearTimeout(autosaveTimerRef.current);
       const currentApi = apiRef.current;
-      if (currentApi && sceneId) {
+      if (currentApi && sceneId && hasPendingChangesRef.current) {
         const currentElements = currentApi.getSceneElements();
-        const lastSynced = lastSyncedElementsRef.current;
-        const dirty = !lastSynced || currentElements !== lastSynced;
-
-        if (dirty && currentElements.length > 0) {
+        if (currentElements.length > 0) {
           const sceneData = {
             elements: currentElements,
             appState: sanitizeAppState(currentApi.getAppState() as Record<string, unknown>),
@@ -406,6 +475,7 @@ export function Editor() {
                   appState: { viewBackgroundColor: "#ffffff" },
                 }
           }
+          onChange={scheduleAutosave}
           viewModeEnabled={readOnly}
           UIOptions={{
             canvasActions: {

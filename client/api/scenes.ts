@@ -123,6 +123,22 @@ export async function updateScene(
   });
 }
 
+/** Incremental update: send only changed elements */
+export async function patchScene(
+  id: string,
+  data: {
+    elements: { upserts: unknown[]; deletes: string[] };
+    appState?: Record<string, unknown>;
+    files?: Record<string, unknown>;
+    thumbnail?: string;
+  },
+): Promise<SceneDetail> {
+  return apiFetch(`/api/scenes/${id}`, {
+    method: "PATCH",
+    body: JSON.stringify(data),
+  });
+}
+
 /** Delete a scene */
 export async function deleteScene(id: string): Promise<void> {
   return apiFetch(`/api/scenes/${id}`, { method: "DELETE" });
