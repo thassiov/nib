@@ -253,6 +253,8 @@ Default Node.js process metrics (CPU, memory, event loop, GC) are also exposed v
 
 A pre-built Grafana dashboard is available with panels for application overview (drawings, users, sessions), activity timeseries (creation/deletion rates), process health (CPU, memory, event loop), and log aggregation (via Loki).
 
+![Grafana dashboard](screenshots/grafana-dashboard.png)
+
 ### Notes
 
 - The `/metrics` endpoint skips session middleware to prevent scrape requests from creating anonymous sessions.

@@ -24,6 +24,10 @@ A self-hosted drawing platform powered by [Excalidraw](https://excalidraw.com/).
 
 ![Editor (authenticated, private)](docs/screenshots/editor-authenticated.png)
 
+**Grafana dashboard** — application metrics, activity timeseries, process health, and logs
+
+![Grafana dashboard](docs/screenshots/grafana-dashboard.png)
+
 ## Features
 
 - **Excalidraw editor** with incremental autosave, manual save, cloning, and file upload
