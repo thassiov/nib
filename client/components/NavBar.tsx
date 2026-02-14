@@ -2,6 +2,8 @@ import { useState, useEffect } from "react";
 import { Link } from "react-router-dom";
 import { useAuth } from "../contexts/AuthContext";
 import { logger } from "../api/logger";
+import { Button } from "./ui/button";
+import { Badge } from "./ui/badge";
 
 export function NavBar() {
   const { user, loading, login, logout } = useAuth();
@@ -16,94 +18,45 @@ export function NavBar() {
   };
 
   return (
-    <nav style={styles.nav}>
-      <div style={styles.left}>
-        <Link to="/" style={styles.brand}>nib</Link>
-        <Link to="/gallery" style={styles.link}>Gallery</Link>
-        {user && <Link to="/my" style={styles.link}>My Drawings</Link>}
+    <nav className="flex items-center justify-between px-4 h-12 border-b border-border bg-background">
+      <div className="flex items-center gap-4">
+        <Link to="/" className="font-bold text-lg text-foreground no-underline">
+          nib
+        </Link>
+        <Link to="/gallery" className="text-sm text-muted-foreground hover:text-foreground no-underline transition-colors">
+          Gallery
+        </Link>
+        {user && (
+          <Link to="/my" className="text-sm text-muted-foreground hover:text-foreground no-underline transition-colors">
+            My Drawings
+          </Link>
+        )}
       </div>
 
-      <div style={styles.right}>
+      <div className="flex items-center gap-3">
         {user?.role === "admin" && (
           <button
             onClick={toggleLogs}
-            style={{
-              ...styles.logToggle,
-              color: logsEnabled ? "#2e7d32" : "#999",
-            }}
+            className="px-2 py-1 text-xs font-mono border border-border rounded-md bg-secondary cursor-pointer transition-colors"
+            style={{ color: logsEnabled ? "#2e7d32" : undefined }}
             title={logsEnabled ? "Remote logging: ON" : "Remote logging: OFF"}
           >
             {logsEnabled ? "Logs ON" : "Logs OFF"}
           </button>
         )}
         {loading ? null : user ? (
-          <div style={styles.userArea}>
-            <span style={styles.username}>{user.username}</span>
-            <button onClick={logout} style={styles.button}>Log out</button>
+          <div className="flex items-center gap-3">
+            <span className="text-sm text-muted-foreground">{user.username}</span>
+            <Button variant="outline" size="sm" onClick={logout}>
+              Log out
+            </Button>
           </div>
         ) : (
-          <button onClick={login} style={styles.button}>Log in</button>
+          <Button variant="outline" size="sm" onClick={login}>
+            Log in
+          </Button>
         )}
       </div>
     </nav>
   );
 }
-
-const styles: Record<string, React.CSSProperties> = {
-  nav: {
-    display: "flex",
-    justifyContent: "space-between",
-    alignItems: "center",
-    padding: "0 16px",
-    height: 48,
-    borderBottom: "1px solid #e0e0e0",
-    backgroundColor: "#fff",
-  },
-  left: {
-    display: "flex",
-    alignItems: "center",
-    gap: 16,
-  },
-  right: {
-    display: "flex",
-    alignItems: "center",
-  },
-  brand: {
-    fontWeight: 700,
-    fontSize: 18,
-    textDecoration: "none",
-    color: "#1a1a1a",
-  },
-  link: {
-    textDecoration: "none",
-    color: "#555",
-    fontSize: 14,
-  },
-  userArea: {
-    display: "flex",
-    alignItems: "center",
-    gap: 12,
-  },
-  username: {
-    fontSize: 14,
-    color: "#333",
-  },
-  button: {
-    padding: "6px 14px",
-    fontSize: 13,
-    border: "1px solid #ccc",
-    borderRadius: 4,
-    backgroundColor: "#fff",
-    cursor: "pointer",
-  },
-  logToggle: {
-    padding: "4px 8px",
-    fontSize: 11,
-    fontFamily: "monospace",
-    border: "1px solid #ddd",
-    borderRadius: 4,
-    backgroundColor: "#fafafa",
-    cursor: "pointer",
-    marginRight: 12,
-  },
-};

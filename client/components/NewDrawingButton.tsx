@@ -1,18 +1,21 @@
 import { useState, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
+import { Plus } from "lucide-react";
 import { createScene } from "../api/scenes";
+import { Button } from "./ui/button";
+import { cn } from "../lib/utils";
 
 interface NewDrawingButtonProps {
-  style?: React.CSSProperties;
-  children: React.ReactNode;
+  className?: string;
+  variant?: "default" | "outline" | "secondary" | "ghost";
+  size?: "default" | "sm" | "lg" | "icon";
+  children?: React.ReactNode;
 }
 
 /**
  * Creates an empty scene via the API, then navigates to /drawing/:id.
- * This avoids the /drawing/new route entirely — the Editor always
- * opens with a real scene ID and never needs a first-time create flow.
  */
-export function NewDrawingButton({ style, children }: NewDrawingButtonProps) {
+export function NewDrawingButton({ className, variant = "default", size = "default", children }: NewDrawingButtonProps) {
   const navigate = useNavigate();
   const [creating, setCreating] = useState(false);
 
@@ -32,8 +35,23 @@ export function NewDrawingButton({ style, children }: NewDrawingButtonProps) {
   }, [creating, navigate]);
 
   return (
-    <button onClick={handleClick} disabled={creating} style={style}>
-      {creating ? "Creating..." : children}
-    </button>
+    <Button
+      onClick={handleClick}
+      disabled={creating}
+      variant={variant}
+      size={size}
+      className={cn(className)}
+    >
+      {creating ? (
+        "Creating..."
+      ) : children ? (
+        children
+      ) : (
+        <>
+          <Plus className="h-4 w-4 mr-1" />
+          New Drawing
+        </>
+      )}
+    </Button>
   );
 }

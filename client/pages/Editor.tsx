@@ -7,6 +7,7 @@ import { useAuth } from "../contexts/AuthContext";
 import { getScene, createScene, updateScene } from "../api/scenes";
 import type { SceneDetail } from "../api/scenes";
 import { logger } from "../api/logger";
+import { Badge } from "../components/ui/badge";
 
 const SYNC_INTERVAL_MS = 5000;
 
@@ -66,8 +67,6 @@ export function Editor() {
   }, [id]);
 
   // Strip runtime-only fields from appState before persisting.
-  // Excalidraw keeps `collaborators` as a Map (not JSON-serializable)
-  // and other transient UI state that shouldn't be saved.
   const sanitizeAppState = useCallback((appState: Record<string, unknown>) => {
     const { collaborators, ...rest } = appState;
     return rest;
@@ -91,7 +90,6 @@ export function Editor() {
     const currentElements = currentApi.getSceneElements();
     if (!lastSyncedElementsRef.current) return currentElements.length > 0;
     if (currentElements.length !== lastSyncedElementsRef.current.length) return true;
-    // Reference check — Excalidraw creates new element objects on change
     return currentElements !== lastSyncedElementsRef.current;
   }, []);
 
@@ -101,7 +99,6 @@ export function Editor() {
     if (!currentApi) return null;
 
     const elements = currentApi.getSceneElements();
-    // Skip if canvas is empty (no non-deleted elements)
     if (!elements.length || elements.every((el: any) => el.isDeleted)) return null;
 
     try {
@@ -180,9 +177,7 @@ export function Editor() {
     return () => clearInterval(interval);
   }, [id, readOnly, isDirty, generateThumbnail, sanitizeAppState]);
 
-  // Flush on unmount if dirty (fire-and-forget, best-effort thumbnail).
-  // Guard: skip if elements are empty — Excalidraw may return [] during teardown
-  // when the canvas is already destroyed.
+  // Flush on unmount if dirty
   useEffect(() => {
     const sceneId = id;
     return () => {
@@ -199,13 +194,11 @@ export function Editor() {
             files: currentApi.getFiles(),
           };
 
-          // Try to generate thumbnail, but don't block the save
           generateThumbnail()
             .then((thumbnail) => {
               updateScene(sceneId, { data: sceneData, ...(thumbnail && { thumbnail }) }).catch(() => {});
             })
             .catch(() => {
-              // Thumbnail failed (canvas gone), save without it
               updateScene(sceneId, { data: sceneData }).catch(() => {});
             });
         }
@@ -242,7 +235,7 @@ export function Editor() {
     }
   }, [getSceneData, title, navigate, generateThumbnail]);
 
-  // Upload New — opens file picker, creates new scene from file, navigates
+  // Upload New
   const handleUploadNew = useCallback(() => {
     const input = document.createElement("input");
     input.type = "file";
@@ -334,28 +327,28 @@ export function Editor() {
 
   if (loading) {
     return (
-      <div style={styles.center}>
-        <p>Loading drawing...</p>
+      <div className="flex items-center justify-center h-[calc(100vh-48px)]">
+        <p className="text-muted-foreground">Loading drawing...</p>
       </div>
     );
   }
 
   if (error) {
     return (
-      <div style={styles.center}>
-        <p style={{ color: "#c00" }}>{error}</p>
+      <div className="flex items-center justify-center h-[calc(100vh-48px)]">
+        <p className="text-destructive">{error}</p>
       </div>
     );
   }
 
   return (
-    <div style={styles.wrapper}>
+    <div className="flex flex-col h-[calc(100vh-48px)] overflow-hidden">
       {/* Editor toolbar */}
-      <div style={styles.toolbar}>
-        <div style={styles.titleArea}>
+      <div className="flex items-center justify-between px-3 h-10 shrink-0 border-b border-border bg-secondary/50">
+        <div className="flex items-center gap-2">
           {editingTitle && !readOnly ? (
             <input
-              style={styles.titleInput}
+              className="text-sm font-medium px-1 py-0.5 border border-input rounded-sm outline-none w-50 bg-background"
               value={title}
               onChange={(e) => setTitle(e.target.value)}
               onBlur={handleTitleSubmit}
@@ -364,33 +357,37 @@ export function Editor() {
             />
           ) : (
             <span
-              style={{ ...styles.titleText, cursor: readOnly ? "default" : "pointer" }}
+              className={`text-sm font-medium text-foreground px-1 py-0.5 rounded-sm ${readOnly ? "" : "cursor-pointer hover:bg-accent"}`}
               onClick={() => !readOnly && setEditingTitle(true)}
               title={readOnly ? undefined : "Click to rename"}
             >
               {title}
             </span>
           )}
-          {readOnly && <span style={styles.badge}>View only</span>}
+          {readOnly && (
+            <Badge variant="secondary" className="text-[11px]">View only</Badge>
+          )}
           {!readOnly && (
-            <span style={{ ...styles.badge, backgroundColor: isPublic ? "#d4edda" : "#eee", color: isPublic ? "#155724" : "#888" }}>
+            <Badge
+              variant={isPublic ? "default" : "outline"}
+              className={`text-[11px] ${isPublic ? "bg-green-100 text-green-800 hover:bg-green-100" : ""}`}
+            >
               {isPublic ? "Public" : "Private"}
-            </span>
+            </Badge>
           )}
         </div>
-        <div style={styles.toolbarRight}>
-          {saving && <span style={styles.saveStatus}>Saving...</span>}
+        <div className="flex items-center gap-3">
+          {saving && <span className="text-xs text-muted-foreground">Saving...</span>}
           {!saving && lastSaved && (
-            <span style={styles.saveStatus}>
+            <span className="text-xs text-muted-foreground">
               Saved {lastSaved.toLocaleTimeString()}
             </span>
           )}
-          
         </div>
       </div>
 
       {/* Excalidraw canvas */}
-      <div style={styles.canvas}>
+      <div className="flex-1 overflow-hidden">
         <Excalidraw
           excalidrawAPI={setApi}
           initialData={
@@ -419,38 +416,32 @@ export function Editor() {
           }}
         >
           <MainMenu>
-            {/* Save — owner only */}
             {!readOnly && (
               <MainMenu.Item onSelect={handleSave}>
                 Save now
               </MainMenu.Item>
             )}
 
-            {/* Make Public / Make Private — owner only */}
             {!readOnly && (
               <MainMenu.Item onSelect={handleTogglePublic}>
                 {isPublic ? "Make Private" : "Make Public"}
               </MainMenu.Item>
             )}
 
-            {/* Clone / Make a Copy */}
             <MainMenu.Item onSelect={handleClone}>
               Make a Copy
             </MainMenu.Item>
 
             <MainMenu.Separator />
 
-            {/* Upload New */}
             <MainMenu.Item onSelect={handleUploadNew}>
               Upload New Drawing
             </MainMenu.Item>
 
-            {/* Export — built-in Excalidraw export */}
             <MainMenu.DefaultItems.Export />
 
             <MainMenu.Separator />
 
-            {/* Navigation links */}
             <MainMenu.ItemLink href="/gallery">
               Public Gallery
             </MainMenu.ItemLink>
@@ -462,13 +453,9 @@ export function Editor() {
 
             <MainMenu.Separator />
 
-            {/* Theme toggle */}
             <MainMenu.DefaultItems.ToggleTheme />
-
-            {/* Help */}
             <MainMenu.DefaultItems.Help />
 
-            {/* Login — logged out only */}
             {!user && (
               <>
                 <MainMenu.Separator />
@@ -483,78 +470,3 @@ export function Editor() {
     </div>
   );
 }
-
-const styles: Record<string, React.CSSProperties> = {
-  wrapper: {
-    display: "flex",
-    flexDirection: "column",
-    height: "calc(100vh - 48px)", // subtract NavBar height
-    overflow: "hidden",
-  },
-  toolbar: {
-    display: "flex",
-    justifyContent: "space-between",
-    alignItems: "center",
-    padding: "4px 12px",
-    borderBottom: "1px solid #e0e0e0",
-    backgroundColor: "#fafafa",
-    height: 40,
-    flexShrink: 0,
-  },
-  titleArea: {
-    display: "flex",
-    alignItems: "center",
-    gap: 8,
-  },
-  titleText: {
-    fontSize: 14,
-    fontWeight: 500,
-    color: "#333",
-    padding: "2px 4px",
-    borderRadius: 3,
-  },
-  titleInput: {
-    fontSize: 14,
-    fontWeight: 500,
-    padding: "2px 4px",
-    border: "1px solid #ccc",
-    borderRadius: 3,
-    outline: "none",
-    width: 200,
-  },
-  badge: {
-    fontSize: 11,
-    color: "#888",
-    backgroundColor: "#eee",
-    padding: "2px 6px",
-    borderRadius: 3,
-  },
-  toolbarRight: {
-    display: "flex",
-    alignItems: "center",
-    gap: 12,
-  },
-  saveStatus: {
-    fontSize: 12,
-    color: "#888",
-  },
-  saveButton: {
-    padding: "4px 12px",
-    fontSize: 13,
-    border: "1px solid #ccc",
-    borderRadius: 4,
-    backgroundColor: "#1a1a1a",
-    color: "#fff",
-    cursor: "pointer",
-  },
-  canvas: {
-    flex: 1,
-    overflow: "hidden",
-  },
-  center: {
-    display: "flex",
-    justifyContent: "center",
-    alignItems: "center",
-    height: "calc(100vh - 48px)",
-  },
-};

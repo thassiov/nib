@@ -1,19 +1,24 @@
 import { useState, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
+import { Upload } from "lucide-react";
 import { exportToBlob } from "@excalidraw/excalidraw";
 import { createScene } from "../api/scenes";
 import { logger } from "../api/logger";
+import { Button } from "./ui/button";
+import { cn } from "../lib/utils";
 
 interface UploadDrawingButtonProps {
-  style?: React.CSSProperties;
-  children: React.ReactNode;
+  className?: string;
+  variant?: "default" | "outline" | "secondary" | "ghost";
+  size?: "default" | "sm" | "lg" | "icon";
+  children?: React.ReactNode;
 }
 
 /**
  * Opens a file picker for .excalidraw/.json files, validates and creates
  * a scene via the API, then navigates to /drawing/:id.
  */
-export function UploadDrawingButton({ style, children }: UploadDrawingButtonProps) {
+export function UploadDrawingButton({ className, variant = "outline", size = "default", children }: UploadDrawingButtonProps) {
   const navigate = useNavigate();
   const [uploading, setUploading] = useState(false);
 
@@ -66,7 +71,6 @@ export function UploadDrawingButton({ style, children }: UploadDrawingButtonProp
               reader.readAsDataURL(blob);
             });
           } catch (err) {
-            // Thumbnail generation failed — continue without it
             logger.error("UploadDrawingButton: thumbnail generation failed", { error: String(err) });
           }
         }
@@ -91,8 +95,23 @@ export function UploadDrawingButton({ style, children }: UploadDrawingButtonProp
   }, [uploading, navigate]);
 
   return (
-    <button onClick={handleClick} disabled={uploading} style={style}>
-      {uploading ? "Uploading..." : children}
-    </button>
+    <Button
+      onClick={handleClick}
+      disabled={uploading}
+      variant={variant}
+      size={size}
+      className={cn(className)}
+    >
+      {uploading ? (
+        "Uploading..."
+      ) : children ? (
+        children
+      ) : (
+        <>
+          <Upload className="h-4 w-4 mr-1" />
+          Upload
+        </>
+      )}
+    </Button>
   );
 }

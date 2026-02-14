@@ -1,13 +1,14 @@
 import { useState, useEffect } from "react";
-import { useAuth } from "../contexts/AuthContext";
+import { Trash2 } from "lucide-react";
 import { listMyScenes, deleteScene } from "../api/scenes";
 import { SceneCard } from "../components/SceneCard";
 import { NewDrawingButton } from "../components/NewDrawingButton";
 import { UploadDrawingButton } from "../components/UploadDrawingButton";
+import { Button } from "../components/ui/button";
+import { Badge } from "../components/ui/badge";
 import type { SceneListItem } from "../api/scenes";
 
 export function MyDrawings() {
-  const { user } = useAuth();
   const [scenes, setScenes] = useState<SceneListItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -42,76 +43,77 @@ export function MyDrawings() {
   };
 
   return (
-    <div style={{ padding: 24 }}>
-      <div style={styles.header}>
-        <h1>My Drawings</h1>
-        <div style={styles.headerActions}>
-          <UploadDrawingButton style={styles.uploadButton}>
-            Upload
-          </UploadDrawingButton>
-          <NewDrawingButton style={styles.newButton}>
-            New Drawing
-          </NewDrawingButton>
+    <div className="p-6 max-w-6xl mx-auto">
+      <div className="flex items-center justify-between mb-6">
+        <h1 className="text-2xl font-semibold text-foreground">My Drawings</h1>
+        <div className="flex gap-2">
+          <UploadDrawingButton variant="outline" />
+          <NewDrawingButton />
         </div>
       </div>
 
-      {loading && <p style={styles.status}>Loading...</p>}
-      {error && <p style={{ ...styles.status, color: "#c00" }}>{error}</p>}
+      {loading && (
+        <p className="text-center text-muted-foreground mt-12">Loading...</p>
+      )}
+      {error && (
+        <p className="text-center text-destructive mt-12">{error}</p>
+      )}
 
       {!loading && !error && scenes.length === 0 && (
-        <div style={{ textAlign: "center", marginTop: 48 }}>
-          <p style={{ color: "#666", marginBottom: 16 }}>You haven't created any drawings yet.</p>
-          <div style={{ display: "flex", justifyContent: "center", gap: 8 }}>
-            <UploadDrawingButton style={styles.uploadButton}>
-              Upload a drawing
-            </UploadDrawingButton>
-            <NewDrawingButton style={styles.newButton}>
-              Create your first drawing
-            </NewDrawingButton>
+        <div className="text-center mt-12">
+          <p className="text-muted-foreground mb-4">You haven't created any drawings yet.</p>
+          <div className="flex justify-center gap-2">
+            <UploadDrawingButton variant="outline">Upload a drawing</UploadDrawingButton>
+            <NewDrawingButton>Create your first drawing</NewDrawingButton>
           </div>
         </div>
       )}
 
       {!loading && !error && scenes.length > 0 && (
         <>
-          <div style={styles.grid}>
+          <div className="grid grid-cols-[repeat(auto-fill,minmax(220px,1fr))] gap-4">
             {scenes.map((scene) => (
-              <div key={scene.id} style={styles.cardWrapper}>
+              <div key={scene.id} className="flex flex-col">
                 <SceneCard scene={scene} />
-                <div style={styles.cardActions}>
-                  <span style={styles.visibility}>
+                <div className="flex items-center justify-between px-0.5 mt-1.5">
+                  <Badge variant={scene.is_public ? "secondary" : "outline"} className="text-xs">
                     {scene.is_public ? "Public" : "Private"}
-                  </span>
-                  <button
+                  </Badge>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="text-destructive hover:text-destructive h-7 px-2"
                     onClick={() => handleDelete(scene.id, scene.title)}
-                    style={styles.deleteButton}
                   >
+                    <Trash2 className="h-3.5 w-3.5 mr-1" />
                     Delete
-                  </button>
+                  </Button>
                 </div>
               </div>
             ))}
           </div>
 
           {totalPages > 1 && (
-            <div style={styles.pagination}>
-              <button
+            <div className="flex items-center justify-center gap-4 mt-6">
+              <Button
+                variant="outline"
+                size="sm"
                 onClick={() => setPage((p) => Math.max(1, p - 1))}
                 disabled={page <= 1}
-                style={styles.pageButton}
               >
                 Previous
-              </button>
-              <span style={styles.pageInfo}>
+              </Button>
+              <span className="text-sm text-muted-foreground">
                 Page {page} of {totalPages}
               </span>
-              <button
+              <Button
+                variant="outline"
+                size="sm"
                 onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
                 disabled={page >= totalPages}
-                style={styles.pageButton}
               >
                 Next
-              </button>
+              </Button>
             </div>
           )}
         </>
@@ -119,86 +121,3 @@ export function MyDrawings() {
     </div>
   );
 }
-
-const styles: Record<string, React.CSSProperties> = {
-  header: {
-    display: "flex",
-    justifyContent: "space-between",
-    alignItems: "center",
-    marginBottom: 24,
-  },
-  headerActions: {
-    display: "flex",
-    gap: 8,
-  },
-  uploadButton: {
-    padding: "8px 16px",
-    backgroundColor: "#fff",
-    color: "#1a1a1a",
-    border: "1px solid #ccc",
-    borderRadius: 4,
-    fontSize: 14,
-    cursor: "pointer",
-  },
-  newButton: {
-    padding: "8px 16px",
-    backgroundColor: "#1a1a1a",
-    color: "#fff",
-    border: "none",
-    borderRadius: 4,
-    fontSize: 14,
-    cursor: "pointer",
-  },
-  status: {
-    color: "#666",
-    textAlign: "center" as const,
-    marginTop: 48,
-  },
-  grid: {
-    display: "grid",
-    gridTemplateColumns: "repeat(auto-fill, minmax(220px, 1fr))",
-    gap: 16,
-  },
-  cardWrapper: {
-    display: "flex",
-    flexDirection: "column",
-  },
-  cardActions: {
-    display: "flex",
-    justifyContent: "space-between",
-    alignItems: "center",
-    padding: "4px 2px",
-    marginTop: 4,
-  },
-  visibility: {
-    fontSize: 12,
-    color: "#888",
-  },
-  deleteButton: {
-    fontSize: 12,
-    color: "#c00",
-    background: "none",
-    border: "none",
-    cursor: "pointer",
-    padding: "2px 4px",
-  },
-  pagination: {
-    display: "flex",
-    justifyContent: "center",
-    alignItems: "center",
-    gap: 16,
-    marginTop: 24,
-  },
-  pageButton: {
-    padding: "6px 14px",
-    fontSize: 13,
-    border: "1px solid #ccc",
-    borderRadius: 4,
-    backgroundColor: "#fff",
-    cursor: "pointer",
-  },
-  pageInfo: {
-    fontSize: 13,
-    color: "#666",
-  },
-};
