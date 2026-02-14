@@ -23,13 +23,17 @@ export function NavBar() {
         <Link to="/" className="font-bold text-lg text-foreground no-underline">
           nib
         </Link>
-        <Link to="/gallery" className="text-sm text-muted-foreground hover:text-foreground no-underline transition-colors">
-          Gallery
-        </Link>
-        {user && (
-          <Link to="/my" className="text-sm text-muted-foreground hover:text-foreground no-underline transition-colors">
-            My Drawings
+        <Button variant="ghost" size="sm" asChild>
+          <Link to="/gallery" className="text-muted-foreground hover:text-foreground no-underline">
+            Gallery
           </Link>
+        </Button>
+        {user && (
+          <Button variant="ghost" size="sm" asChild>
+            <Link to="/my" className="text-muted-foreground hover:text-foreground no-underline">
+              My Drawings
+            </Link>
+          </Button>
         )}
       </div>
 
