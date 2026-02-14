@@ -202,9 +202,13 @@ Default Node.js process metrics (CPU, memory, event loop, GC) are also exposed v
 
 ### Grafana dashboard
 
-A pre-built Grafana dashboard is available with panels for application overview (drawings, users, sessions), activity timeseries (creation/deletion rates), process health (CPU, memory, event loop), and log aggregation (via Loki).
+A pre-built Grafana dashboard is included at [`grafana/dashboard.json`](../grafana/dashboard.json). Import it via Grafana UI (Dashboards > Import > Upload JSON file) and select your Prometheus and Loki datasources when prompted.
+
+The dashboard includes panels for application overview (drawings, users, sessions), activity timeseries (creation/deletion rates), process health (CPU, memory, event loop), and log aggregation (via Loki).
 
 ![Grafana dashboard](screenshots/grafana-dashboard.png)
+
+The PromQL queries filter by `job="nib"` — make sure your Prometheus scrape config uses `job_name: nib` (or adjust the queries after import). The Loki logs panel uses `{job="nib"}` which should match if your log collector labels nib logs with the same job name.
 
 ### Notes
 
