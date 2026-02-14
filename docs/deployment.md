@@ -73,7 +73,44 @@ The compose file supports these env vars (set in `.env` or environment):
 ### Prerequisites
 
 - Node.js 22+
-- PostgreSQL
+- PostgreSQL (external — nib does not include its own database server)
+
+### Database setup
+
+nib needs a PostgreSQL database to exist before it can start. The migration script creates **tables**, but the **database and user** must be created first.
+
+If you already have a PostgreSQL server, create the database and user:
+
+```sql
+CREATE DATABASE nib;
+CREATE USER nib WITH PASSWORD '<password>';
+GRANT ALL PRIVILEGES ON DATABASE nib TO nib;
+-- On PostgreSQL 15+, also grant schema permissions:
+ALTER DATABASE nib OWNER TO nib;
+```
+
+Then create the tables using either method:
+
+**Option A: Sequelize sync** (uses the model definitions directly):
+```bash
+DB_HOST=<your-pg-host> DB_USER=nib DB_PASS=<password> npx tsx server/migrate.ts
+```
+
+**Option B: SQL migration files** (the same ones Docker Compose uses):
+```bash
+psql -h <your-pg-host> -U nib -d nib -f migrations/001_initial.sql
+psql -h <your-pg-host> -U nib -d nib -f migrations/002_add_user_role.sql
+psql -h <your-pg-host> -U nib -d nib -f migrations/003_add_session_table.sql
+```
+
+The session table is also auto-created by `connect-pg-simple` on first startup (`createTableIfMissing: true`), so migration file `003` is optional if you prefer to let the app handle it.
+
+On subsequent deploys, if models have changed:
+```bash
+DB_HOST=<your-pg-host> DB_USER=nib DB_PASS=<password> npx tsx server/migrate.ts --alter
+```
+
+The `--alter` flag adds new columns and indexes without dropping data.
 
 ### Build
 
@@ -88,28 +125,6 @@ This produces:
 - `dist/client/` — Static frontend files (HTML, JS, CSS)
 - `dist/server/` — Compiled server JavaScript
 
-### Database setup
-
-Create the database and run migrations:
-
-```sql
-CREATE DATABASE nib;
-CREATE USER nib WITH PASSWORD '<password>';
-GRANT ALL PRIVILEGES ON DATABASE nib TO nib;
-```
-
-```bash
-# Create tables
-npx tsx server/migrate.ts
-
-# Subsequent deploys: alter tables to match model changes
-npx tsx server/migrate.ts --alter
-```
-
-The `--alter` flag adds new columns and indexes without dropping data. For breaking schema changes, you'd need a manual migration or `--force` (which drops and recreates — destructive).
-
-The session table is auto-created by `connect-pg-simple` on first startup (`createTableIfMissing: true`), so no manual migration is needed for sessions.
-
 ### Environment
 
 Create a `.env` file or set environment variables:
@@ -117,7 +132,7 @@ Create a `.env` file or set environment variables:
 ```bash
 NODE_ENV=production
 PORT=3000
-SESSION_SECRET=<generate-a-strong-random-string>
+SESSION_SECRET=<generate-with-openssl-rand-hex-32>
 
 # Database
 DB_HOST=localhost
@@ -126,15 +141,15 @@ DB_NAME=nib
 DB_USER=nib
 DB_PASS=<database-password>
 
-# OIDC
+# OIDC (optional — app works without auth, you just can't log in)
 OIDC_ISSUER=https://your-oidc-provider.example.com
 OIDC_CLIENT_ID=nib
 OIDC_CLIENT_SECRET=<oidc-client-secret>
-OIDC_REDIRECT_URI=https://your-domain.example.com/auth/callback
-OIDC_POST_LOGOUT_URI=https://your-domain.example.com
+OIDC_REDIRECT_URI=http://localhost:3000/auth/callback
+OIDC_POST_LOGOUT_URI=http://localhost:3000
 
 # Optional
-COOKIE_SECURE=true
+COOKIE_SECURE=false
 ADMIN_SUBS=oidc-subject-id-1,oidc-subject-id-2
 ```
 
@@ -145,70 +160,6 @@ NODE_ENV=production node dist/server/main.js
 ```
 
 In production mode, NestJS serves the built client files as static assets via `@nestjs/serve-static` and handles all routes (API, auth, and SPA fallback) on a single port.
-
-## Reverse proxy
-
-nib should sit behind a reverse proxy that handles TLS termination. The app trusts `X-Forwarded-*` headers (`trust proxy` is enabled in `main.ts`) for secure cookie handling.
-
-When behind a TLS-terminating proxy, set `COOKIE_SECURE=true` in your environment.
-
-### nginx example
-
-```nginx
-server {
-    listen 443 ssl;
-    server_name draw.example.com;
-
-    ssl_certificate     /etc/ssl/certs/draw.example.com.pem;
-    ssl_certificate_key /etc/ssl/private/draw.example.com.key;
-
-    location / {
-        proxy_pass http://127.0.0.1:3000;
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
-
-        # WebSocket support (if needed later)
-        proxy_http_version 1.1;
-        proxy_set_header Upgrade $http_upgrade;
-        proxy_set_header Connection "upgrade";
-
-        # Large drawing uploads
-        client_max_body_size 50m;
-    }
-}
-```
-
-### Important proxy settings
-
-- `X-Forwarded-Proto` must be set for secure cookies to work. NestJS checks this header when `trust proxy` is enabled.
-- `client_max_body_size` should match the body parser limit (50MB) to allow large drawings.
-- The proxy should forward the `Host` header so the OIDC callback URL resolves correctly.
-
-## systemd service
-
-```ini
-[Unit]
-Description=nib drawing platform
-After=network.target postgresql.service
-
-[Service]
-Type=simple
-User=nib
-WorkingDirectory=/opt/nib
-ExecStart=/usr/bin/node dist/server/main.js
-EnvironmentFile=/opt/nib/.env
-Restart=on-failure
-RestartSec=5
-
-[Install]
-WantedBy=multi-user.target
-```
-
-```bash
-sudo systemctl enable --now nib
-```
 
 ## Health check
 
@@ -260,35 +211,3 @@ A pre-built Grafana dashboard is available with panels for application overview 
 - The `/metrics` endpoint skips session middleware to prevent scrape requests from creating anonymous sessions.
 - The endpoint is excluded from the SPA catch-all so it returns Prometheus text format, not the React app.
 - Session counts use a raw SQL query (`sess::jsonb->>'userId'`) to classify sessions as authenticated or anonymous.
-
-## Backups
-
-nib stores all drawing data in PostgreSQL. Back up the `nib` database:
-
-```bash
-pg_dump -h localhost -U nib nib > nib_backup.sql
-```
-
-Key tables:
-- `users` — User accounts (linked to OIDC identities)
-- `scenes` — Drawings (JSONB data can be large)
-- `session` — Server-side sessions (managed by `connect-pg-simple`)
-
-## Upgrading
-
-```bash
-cd /opt/nib
-git pull
-npm ci
-npm run build
-npx tsx server/migrate.ts --alter
-sudo systemctl restart nib
-```
-
-Or with Docker:
-
-```bash
-cd /path/to/nib
-git pull
-docker compose up -d --build
-```

@@ -91,11 +91,16 @@ cd nib
 npm install
 ```
 
-Create the database and run migrations:
+Create the database (requires an existing PostgreSQL server):
 
 ```bash
 createdb nib
-npx tsx server/migrate.ts
+```
+
+Create the tables (see [deployment docs](docs/deployment.md#database-setup) for details):
+
+```bash
+DB_HOST=localhost DB_USER=<user> DB_PASS=<password> npx tsx server/migrate.ts
 ```
 
 Set environment variables (see [Environment variables](#environment-variables)) and start:
@@ -260,6 +265,16 @@ Tests use Vitest with SQLite in-memory for server tests and jsdom for client tes
 | `npm test` | Run all tests |
 | `npm run test:watch` | Tests in watch mode |
 | `npm run migrate` | Sync database schema |
+
+## Roadmap
+
+Documentation and features that are planned but not yet implemented or tested:
+
+- [ ] Reverse proxy setup guide (nginx/Caddy with TLS termination)
+- [ ] systemd service file and process management docs
+- [ ] Upgrade/migration guide for existing deployments
+- [ ] Backup and restore procedures
+- [ ] Database provisioning script for non-Docker PostgreSQL setups
 
 ## License
 
