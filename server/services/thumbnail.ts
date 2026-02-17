@@ -7,9 +7,19 @@
  * because librsvg mishandles embedded woff2 font metrics (letter spacing issues).
  * sharp is only used for post-render resizing when needed.
  *
+ * Font handling: Excalidraw's exportToSvg() embeds fonts as woff2 data URIs in
+ * @font-face declarations. resvg cannot parse woff2 — it needs TTF files. We
+ * extract the embedded woff2 data, decompress to TTF via @woff2/woff2-rs, write
+ * to temp files, and pass them to resvg's fontFiles option. This ensures text
+ * renders correctly even on systems with no installed fonts (e.g. minimal LXC).
+ *
  * All jsdom/shim setup is deferred to the first call to generateThumbnail()
  * so that importing this module doesn't pollute globals during tests.
  */
+
+import * as fs from "fs";
+import * as os from "os";
+import * as path from "path";
 
 const MAX_THUMBNAIL_WIDTH = 300;
 
@@ -118,6 +128,58 @@ async function ensureInitialized() {
 }
 
 /**
+ * Extract embedded woff2 fonts from SVG @font-face declarations, decompress
+ * to TTF, and write to a temp directory. Returns the list of TTF file paths
+ * and a cleanup function.
+ *
+ * resvg only accepts TTF/OTF font files — it cannot parse woff2 data URIs
+ * embedded in SVG stylesheets. This function bridges the gap.
+ */
+async function extractSvgFonts(svgString: string): Promise<{
+  fontFiles: string[];
+  cleanup: () => void;
+}> {
+  const fontFaceRegex =
+    /@font-face\s*\{[^}]*font-family:\s*(\w+)[^}]*src:\s*url\(data:font\/woff2;base64,([^)]+)\)[^}]*\}/g;
+
+  const fontFiles: string[] = [];
+  let tmpDir: string | null = null;
+
+  let match;
+  while ((match = fontFaceRegex.exec(svgString)) !== null) {
+    const family = match[1];
+    const base64Data = match[2];
+    const woff2Buffer = Buffer.from(base64Data, "base64");
+
+    try {
+      const woff2rs = await import("@woff2/woff2-rs");
+      const ttfBuffer = woff2rs.default.decode(woff2Buffer);
+
+      if (!tmpDir) {
+        tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "nib-fonts-"));
+      }
+      const fontPath = path.join(tmpDir, `${family}.ttf`);
+      fs.writeFileSync(fontPath, ttfBuffer);
+      fontFiles.push(fontPath);
+    } catch (err) {
+      console.error(`Failed to decompress font "${family}":`, (err as Error).message);
+    }
+  }
+
+  return {
+    fontFiles,
+    cleanup: () => {
+      for (const f of fontFiles) {
+        try { fs.unlinkSync(f); } catch {}
+      }
+      if (tmpDir) {
+        try { fs.rmdirSync(tmpDir); } catch {}
+      }
+    },
+  };
+}
+
+/**
  * Generate a PNG thumbnail from Excalidraw scene data.
  *
  * @param sceneData - The Excalidraw scene object with elements, appState, files
@@ -149,20 +211,33 @@ export async function generateThumbnail(sceneData: any): Promise<string | null> 
 
     const svgString = svg.outerHTML;
 
-    // Render SVG to PNG via resvg (correct font handling), then resize with sharp
-    const { Resvg } = await import("@resvg/resvg-js");
-    const resvg = new Resvg(svgString);
-    const rendered = resvg.render();
-    const fullPng = rendered.asPng();
+    // Extract embedded woff2 fonts, decompress to TTF for resvg
+    const { fontFiles, cleanup } = await extractSvgFonts(svgString);
 
-    // Resize to thumbnail width
-    const sharp = (await import("sharp")).default;
-    const pngBuffer = await sharp(fullPng)
-      .resize(MAX_THUMBNAIL_WIDTH, null, { fit: "inside" })
-      .png()
-      .toBuffer();
+    try {
+      // Render SVG to PNG via resvg with extracted fonts
+      const { Resvg } = await import("@resvg/resvg-js");
+      const resvg = new Resvg(svgString, {
+        font: {
+          loadSystemFonts: false,
+          fontFiles,
+          defaultFontFamily: "sans-serif",
+        },
+      });
+      const rendered = resvg.render();
+      const fullPng = rendered.asPng();
 
-    return `data:image/png;base64,${pngBuffer.toString("base64")}`;
+      // Resize to thumbnail width
+      const sharp = (await import("sharp")).default;
+      const pngBuffer = await sharp(fullPng)
+        .resize(MAX_THUMBNAIL_WIDTH, null, { fit: "inside" })
+        .png()
+        .toBuffer();
+
+      return `data:image/png;base64,${pngBuffer.toString("base64")}`;
+    } finally {
+      cleanup();
+    }
   } catch (err) {
     // Thumbnail generation is best-effort — never block the request
     console.error("Thumbnail generation failed:", (err as Error).message);
@@ -228,27 +303,39 @@ export async function exportToPng(
 
   const svgString = svg.outerHTML;
 
-  // Render SVG to PNG via resvg (correct font handling)
-  const { Resvg } = await import("@resvg/resvg-js");
-  const scale = options.scale ?? 2;
-  const resvg = new Resvg(svgString, {
-    fitTo: { mode: "zoom" as const, value: scale },
-  });
-  const rendered = resvg.render();
-  let pngBuffer: Buffer = Buffer.from(rendered.asPng());
+  // Extract embedded woff2 fonts, decompress to TTF for resvg
+  const { fontFiles, cleanup } = await extractSvgFonts(svgString);
 
-  // Optional resize via sharp (if width/height constraints are specified)
-  if (options.width || options.height) {
-    const sharp = (await import("sharp")).default;
-    pngBuffer = await sharp(pngBuffer)
-      .resize(
-        options.width ?? null,
-        options.height ?? null,
-        { fit: "inside", withoutEnlargement: true },
-      )
-      .png()
-      .toBuffer();
+  try {
+    // Render SVG to PNG via resvg with extracted fonts
+    const { Resvg } = await import("@resvg/resvg-js");
+    const scale = options.scale ?? 2;
+    const resvg = new Resvg(svgString, {
+      font: {
+        loadSystemFonts: false,
+        fontFiles,
+        defaultFontFamily: "sans-serif",
+      },
+      fitTo: { mode: "zoom" as const, value: scale },
+    });
+    const rendered = resvg.render();
+    let pngBuffer: Buffer = Buffer.from(rendered.asPng());
+
+    // Optional resize via sharp (if width/height constraints are specified)
+    if (options.width || options.height) {
+      const sharp = (await import("sharp")).default;
+      pngBuffer = await sharp(pngBuffer)
+        .resize(
+          options.width ?? null,
+          options.height ?? null,
+          { fit: "inside", withoutEnlargement: true },
+        )
+        .png()
+        .toBuffer();
+    }
+
+    return pngBuffer;
+  } finally {
+    cleanup();
   }
-
-  return pngBuffer;
 }
