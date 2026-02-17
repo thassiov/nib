@@ -128,6 +128,7 @@ Validation runs on create and update. The standalone `POST /api/scenes/validate`
 - `GET /api/scenes` — Public gallery, paginated.
 - `GET /api/scenes/my` — User's own scenes (requires auth).
 - `GET /api/scenes/:id` — Single scene with `canEdit` flag (respects visibility + ownership).
+- `GET /api/scenes/:id/export/png` — Export scene as full-resolution PNG. Supports query params: `width`, `height`, `scale` (default 2), `background` (default true). Respects visibility rules.
 - `POST /api/scenes` — Create scene from JSON (auth optional; anonymous scenes tracked in session).
 - `POST /api/scenes/upload` — Upload `.excalidraw`/`.json` file (auth optional).
 - `POST /api/scenes/validate` — Validate scene data without saving.

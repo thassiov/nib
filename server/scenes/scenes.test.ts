@@ -936,6 +936,90 @@ describe("Scene routes", () => {
     });
   });
 
+  // ========== Export as PNG ==========
+
+  describe("GET /api/scenes/:id/export/png", () => {
+    it("exports a public scene as a PNG image", async () => {
+      app = await createTestApp();
+      const user = await seedAlice(app);
+      const scene = await getSceneModel(app).create({
+        user_id: user.id, title: "Export Me", data: VALID_SCENE, is_public: true,
+      });
+
+      const res = await request(app.getHttpServer())
+        .get(`/api/scenes/${scene.id}/export/png`);
+
+      expect(res.status).toBe(200);
+      expect(res.headers["content-type"]).toMatch(/image\/png/);
+      expect(res.body).toBeInstanceOf(Buffer);
+      expect(res.body.length).toBeGreaterThan(0);
+    });
+
+    it("exports a private scene for the owner", async () => {
+      app = await createAuthenticatedTestApp({ userId: ALICE_ID });
+      await seedAlice(app);
+      const scene = await getSceneModel(app).create({
+        user_id: ALICE_ID, title: "Private Export", data: VALID_SCENE, is_public: false,
+      });
+
+      const res = await request(app.getHttpServer())
+        .get(`/api/scenes/${scene.id}/export/png`);
+
+      expect(res.status).toBe(200);
+      expect(res.headers["content-type"]).toMatch(/image\/png/);
+    });
+
+    it("returns 404 for a private scene when not the owner", async () => {
+      app = await createAuthenticatedTestApp({ userId: "other-user-id" });
+      const user = await seedAlice(app);
+      const scene = await getSceneModel(app).create({
+        user_id: user.id, title: "Private", data: VALID_SCENE, is_public: false,
+      });
+
+      const res = await request(app.getHttpServer())
+        .get(`/api/scenes/${scene.id}/export/png`);
+
+      expect(res.status).toBe(404);
+    });
+
+    it("returns 404 for a non-existent scene", async () => {
+      app = await createTestApp();
+
+      const res = await request(app.getHttpServer())
+        .get("/api/scenes/00000000-0000-0000-0000-000000000000/export/png");
+
+      expect(res.status).toBe(404);
+    });
+
+    it("accepts optional width query parameter", async () => {
+      app = await createTestApp();
+      const user = await seedAlice(app);
+      const scene = await getSceneModel(app).create({
+        user_id: user.id, title: "Sized", data: VALID_SCENE, is_public: true,
+      });
+
+      const res = await request(app.getHttpServer())
+        .get(`/api/scenes/${scene.id}/export/png?width=800`);
+
+      expect(res.status).toBe(200);
+      expect(res.headers["content-type"]).toMatch(/image\/png/);
+    });
+
+    it("accepts background=false to exclude background", async () => {
+      app = await createTestApp();
+      const user = await seedAlice(app);
+      const scene = await getSceneModel(app).create({
+        user_id: user.id, title: "No BG", data: VALID_SCENE, is_public: true,
+      });
+
+      const res = await request(app.getHttpServer())
+        .get(`/api/scenes/${scene.id}/export/png?background=false`);
+
+      expect(res.status).toBe(200);
+      expect(res.headers["content-type"]).toMatch(/image\/png/);
+    });
+  });
+
   // ========== Scene adoption on login ==========
 
   describe("Scene adoption (adoptByIds)", () => {

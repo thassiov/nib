@@ -87,6 +87,52 @@ export class ScenesController {
   }
 
   /**
+   * GET /api/scenes/:id/export/png
+   * Export a scene as a full-resolution PNG image.
+   * Respects visibility: public scenes are accessible to anyone,
+   * private scenes only to the owner.
+   *
+   * Query params:
+   *   - width:  max width in px (optional)
+   *   - height: max height in px (optional)
+   *   - scale:  device pixel ratio, default 2 (optional)
+   *   - background: "true" (default) or "false" to exclude background
+   */
+  @Get(":id/export/png")
+  @UseGuards(OptionalAuthGuard)
+  async exportPng(
+    @Param("id") id: string,
+    @Query("width") width?: string,
+    @Query("height") height?: string,
+    @Query("scale") scale?: string,
+    @Query("background") background?: string,
+    @Req() req?: Request,
+    @Res() res?: Response,
+  ) {
+    const session = (req as any).session;
+
+    const options: Record<string, any> = {};
+    if (width) options.width = Math.max(1, parseInt(width) || 0);
+    if (height) options.height = Math.max(1, parseInt(height) || 0);
+    if (scale) options.scale = Math.max(0.5, Math.min(4, parseFloat(scale) || 2));
+    if (background === "false") options.exportBackground = false;
+
+    const pngBuffer = await this.scenesService.exportPng(
+      id,
+      options,
+      session?.userId,
+      session?.ownedScenes,
+    );
+
+    res!.set({
+      "Content-Type": "image/png",
+      "Content-Length": pngBuffer.length.toString(),
+      "Cache-Control": "public, max-age=300",
+    });
+    res!.send(pngBuffer);
+  }
+
+  /**
    * GET /api/scenes/:id
    * Get full scene data. Respects visibility rules.
    * Returns a `canEdit` field indicating whether the requester can modify this scene.

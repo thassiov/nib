@@ -127,7 +127,7 @@ nib/
 
     services/
       validator.ts             Excalidraw scene structural validator
-      thumbnail.ts             Server-side thumbnail generation (Excalidraw → SVG → PNG via sharp)
+      thumbnail.ts             Server-side rendering (Excalidraw → SVG → PNG via resvg-js, thumbnails + full export)
 
     __tests__/
       setup.ts                 Shared SQLite Sequelize for model-level tests

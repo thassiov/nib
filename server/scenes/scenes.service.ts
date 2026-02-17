@@ -2,7 +2,7 @@ import { Injectable, Inject, NotFoundException, ForbiddenException } from "@nest
 import { ScenesRepository } from "./scenes.repository.js";
 import { SceneValidatorService } from "./validator/scene-validator.service.js";
 import { SceneModel } from "../database/models/scene.model.js";
-import { generateThumbnail } from "../services/thumbnail.js";
+import { generateThumbnail, exportToPng, type ExportPngOptions } from "../services/thumbnail.js";
 import { MetricsService } from "../metrics/metrics.service.js";
 
 export interface ListOptions {
@@ -243,6 +243,30 @@ export class ScenesService {
 
     await this.scenesRepository.delete(scene);
     this.metricsService.incDrawingDeleted();
+  }
+
+  /**
+   * Export a scene as a full-resolution PNG buffer.
+   * Respects visibility rules: public scenes are accessible to anyone,
+   * private scenes only to the owner.
+   */
+  async exportPng(
+    id: string,
+    options: ExportPngOptions = {},
+    requestingUserId?: string,
+    ownedScenes?: string[],
+  ): Promise<Buffer> {
+    const scene = await this.scenesRepository.findById(id);
+
+    if (!scene) {
+      throw new NotFoundException("Scene not found");
+    }
+
+    if (!scene.is_public && !this.canModify(scene, requestingUserId, ownedScenes)) {
+      throw new NotFoundException("Scene not found");
+    }
+
+    return exportToPng(scene.data, options);
   }
 
   /**

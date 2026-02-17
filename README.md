@@ -38,6 +38,7 @@ A self-hosted drawing platform powered by [Excalidraw](https://excalidraw.com/).
 - **Anonymous access** — anyone can create and edit drawings without logging in, with session-based ownership (30-day TTL). Logging in adopts anonymous drawings into the user's account
 - **User roles** — admin and user roles, controlled via `ADMIN_SUBS` env var
 - **File upload API** — upload `.excalidraw` files via curl or scripts, with or without authentication
+- **Export as PNG** — server-side rendering of drawings to full-resolution PNG via API, with optional sizing and scale controls
 - **Scene validation** — structural validation of Excalidraw scene data on the server
 - **Prometheus metrics** — `/metrics` endpoint with drawing, user, and process gauges for monitoring
 - **HTTP compression** — gzip/deflate for all responses
@@ -185,6 +186,7 @@ nib uses OIDC with PKCE. Users authenticate through your identity provider (Auth
 GET    /api/scenes              Public gallery (paginated)
 GET    /api/scenes/my           User's drawings (requires auth)
 GET    /api/scenes/:id          Get a drawing
+GET    /api/scenes/:id/export/png  Export drawing as PNG image
 POST   /api/scenes              Create drawing (JSON body)
 POST   /api/scenes/upload       Upload .excalidraw file (multipart, auth optional)
 POST   /api/scenes/validate     Validate scene data without saving
@@ -230,10 +232,28 @@ curl -X POST http://localhost:3000/api/scenes/upload \
   -F "title=Architecture Diagram"
 ```
 
+### Export as PNG
+
+```bash
+# Export a drawing as PNG (full resolution, 2x scale)
+curl -o drawing.png http://localhost:3000/api/scenes/:id/export/png
+
+# With custom max width
+curl -o drawing.png http://localhost:3000/api/scenes/:id/export/png?width=1920
+
+# With custom scale (1x-4x, default 2x)
+curl -o drawing.png http://localhost:3000/api/scenes/:id/export/png?scale=1
+
+# Without background
+curl -o drawing.png http://localhost:3000/api/scenes/:id/export/png?background=false
+```
+
+Export respects visibility rules — public drawings are accessible to anyone, private drawings only to the owner. The rendering pipeline uses `@excalidraw/utils` for SVG generation and `resvg-js` for rasterization, with full Excalidraw font support.
+
 ## Testing
 
 ```bash
-npm test            # Run all 148 tests
+npm test            # Run all 154 tests
 npm run test:watch  # Watch mode
 ```
 
@@ -241,7 +261,7 @@ Tests use Vitest with SQLite in-memory for server tests and jsdom for client tes
 
 | Suite | Tests | Coverage |
 |---|---|---|
-| Scene CRUD + upload + patch + adoption | 71 | Full API integration |
+| Scene CRUD + upload + patch + export + adoption | 77 | Full API integration |
 | Excalidraw scene validation | 26 | Structural validator |
 | Database models + associations | 13 | Models, cascades, anonymous scenes |
 | API client (React) | 12 | Scene API functions |
