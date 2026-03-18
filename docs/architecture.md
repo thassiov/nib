@@ -103,6 +103,8 @@ The scenes feature is the core of nib, with proper layered architecture:
 - `server/scenes/scenes.repository.ts` — Data access with `@InjectModel(SceneModel)`. Unified `findAll()` with pagination, eager loading, and where-clause abstraction. Includes `adoptByIds()` for transferring anonymous scene ownership on login.
 - `server/scenes/validator/scene-validator.service.ts` — Injectable wrapper around the structural Excalidraw validator.
 
+**Mermaid conversion** (`server/services/mermaid.ts`) converts Mermaid diagram definitions to Excalidraw scene elements entirely server-side. It uses `svgdom` to provide an SVG DOM with `getBBox()` support that mermaid needs for rendering and layout, plus `dompurify` for mermaid's SVG sanitization. Three shims are applied on top of svgdom: (1) `getBoundingClientRect` fallback for HTML elements, (2) `<textarea>.value` for HTML entity decoding, and (3) browser globals (`window`, `document`, `DOMPurify`). Mermaid is configured with `securityLevel: "loose"` and `htmlLabels: false` so it produces `<text>` SVG elements that svgdom can measure via fontkit. The resulting skeleton elements are then converted to scene-ready Excalidraw elements with bound text labels, auto-sized containers, and properly routed arrow bindings. Supports flowcharts and class diagrams natively; other types fall back to SVG image representation. Initialization is lazy (first call only) so imports don't pollute globals during tests.
+
 **Scene validation** (`server/services/validator.ts`) performs structural validation of Excalidraw scene JSON. It exists because the `@excalidraw/excalidraw` package can't run in Node.js (it bundles React/DOM dependencies and uses browser-only ESM features).
 
 The validator checks:
@@ -130,6 +132,7 @@ Validation runs on create and update. The standalone `POST /api/scenes/validate`
 - `GET /api/scenes/:id` — Single scene with `canEdit` flag (respects visibility + ownership).
 - `GET /api/scenes/:id/export/png` — Export scene as full-resolution PNG. Supports query params: `width`, `height`, `scale` (default 2), `background` (default true). Respects visibility rules.
 - `POST /api/scenes` — Create scene from JSON (auth optional; anonymous scenes tracked in session).
+- `POST /api/scenes/from-mermaid` — Create scene from Mermaid diagram definition (auth optional). Converts mermaid text to Excalidraw elements server-side. Accepts `{ definition, title?, is_public? }`.
 - `POST /api/scenes/upload` — Upload `.excalidraw`/`.json` file (auth optional).
 - `POST /api/scenes/validate` — Validate scene data without saving.
 - `PUT /api/scenes/:id` — Full update (requires ownership — authenticated or session-based).
@@ -300,11 +303,11 @@ Tests run with Vitest. Server tests use NestJS `Test.createTestingModule()` with
 
 All test files run sequentially (`isolate: false` with `pool: "forks"`) because server tests share state within their respective test suites.
 
-148 tests across 11 files:
+164 tests across 11 files:
 
 | File | Tests | Coverage |
 |---|---|---|
-| `server/scenes/scenes.test.ts` | 71 | Scene CRUD, upload, incremental patch, adoption, ownership, validation |
+| `server/scenes/scenes.test.ts` | 87 | Scene CRUD, upload, mermaid import, incremental patch, adoption, ownership, validation |
 | `server/services/validator.test.ts` | 26 | Excalidraw scene structural validation |
 | `server/db.test.ts` | 13 | Models, associations, cascade delete, anonymous scenes |
 | `client/__tests__/api-scenes.test.tsx` | 12 | Scene API client functions |
@@ -354,6 +357,14 @@ Sessions are simpler for this use case. The server needs to track user state any
 ### Why explicit @Inject() instead of emitDecoratorMetadata
 
 The project uses `tsx` for development, which delegates to esbuild for TypeScript compilation. esbuild strips type information and does not emit the `Reflect.metadata` calls that NestJS uses to resolve constructor parameter types. Rather than switching to a slower TypeScript compiler or adding a build step for development, we use explicit `@Inject(ClassName)` decorators on all constructor parameters. This is a one-line addition per parameter and makes the DI resolution explicit and portable across any TypeScript compiler.
+
+### Why svgdom instead of a headless browser for mermaid conversion
+
+The `@excalidraw/mermaid-to-excalidraw` library converts Mermaid diagram text to Excalidraw element skeletons. Internally, it calls `mermaid.render()` which needs a real DOM with SVG layout capabilities (`getBBox()`, `getBoundingClientRect()`). jsdom doesn't implement SVG geometry methods. The typical solution is Puppeteer/Playwright (headless Chrome), but that adds ~500MB of Chromium and significant startup latency.
+
+`svgdom` is a lightweight SVG DOM implementation (~200KB) that uses fontkit for text measurement and provides real `getBBox()` for SVG elements. Three small shims extend it to cover mermaid's HTML element usage: a `getBoundingClientRect` fallback for `<span>`/`<div>` elements (text measurement approximation), a `<textarea>.value` shim (mermaid-to-excalidraw uses textareas for HTML entity decoding), and browser globals (`window`, `document`, `DOMPurify`).
+
+The skeleton elements produced by `parseMermaidToExcalidraw` contain labels in a `.label` property but Excalidraw's scene format requires separate bound `text` elements. A server-side converter (`skeletonToExcalidraw`) handles this: it auto-sizes containers to fit text using approximate font metrics, centers bound text elements, computes arrow dimensions from points, and adjusts arrow endpoints to sit at container edges rather than mermaid's original positions. The result is a scene that renders correctly when loaded in the Excalidraw editor, where the binding system handles final arrow routing on first render.
 
 ### Why Tailwind CSS v4 + shadcn/ui
 

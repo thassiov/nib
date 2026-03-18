@@ -128,6 +128,7 @@ nib/
     services/
       validator.ts             Excalidraw scene structural validator
       thumbnail.ts             Server-side rendering (Excalidraw → SVG → PNG via resvg-js, thumbnails + full export)
+      mermaid.ts               Mermaid → Excalidraw conversion (svgdom + dompurify, no headless browser)
 
     __tests__/
       setup.ts                 Shared SQLite Sequelize for model-level tests
@@ -181,11 +182,11 @@ All test files run sequentially in a single fork (`isolate: false`) because serv
 
 ### Test suites
 
-148 tests across 11 files:
+164 tests across 11 files:
 
 | File | Tests | What it covers |
 |---|---|---|
-| `server/scenes/scenes.test.ts` | 71 | Scene CRUD, upload, incremental patch, adoption, anonymous ownership, validation |
+| `server/scenes/scenes.test.ts` | 87 | Scene CRUD, upload, mermaid import, incremental patch, adoption, anonymous ownership, validation |
 | `server/services/validator.test.ts` | 26 | Excalidraw scene structural validation |
 | `server/db.test.ts` | 13 | Model creation, associations, cascade delete, anonymous scenes |
 | `client/__tests__/api-scenes.test.tsx` | 12 | Scene API client functions |
