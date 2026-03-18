@@ -1,8 +1,9 @@
-import { Injectable, Inject, NotFoundException, ForbiddenException } from "@nestjs/common";
+import { Injectable, Inject, NotFoundException, ForbiddenException, BadRequestException } from "@nestjs/common";
 import { ScenesRepository } from "./scenes.repository.js";
 import { SceneValidatorService } from "./validator/scene-validator.service.js";
 import { SceneModel } from "../database/models/scene.model.js";
 import { generateThumbnail, exportToPng, type ExportPngOptions } from "../services/thumbnail.js";
+import { convertMermaidToExcalidraw } from "../services/mermaid.js";
 import { MetricsService } from "../metrics/metrics.service.js";
 
 export interface ListOptions {
@@ -121,6 +122,68 @@ export class ScenesService {
     const scene = await this.scenesRepository.create({
       title: data.title || "Untitled",
       data: data.data,
+      is_public: isPublic,
+      user_id: userId ?? null,
+      ...(thumbnail && { thumbnail }),
+    });
+
+    this.metricsService.incDrawingCreated(isPublic);
+
+    return { scene };
+  }
+
+  /**
+   * Create a new scene from a Mermaid diagram definition.
+   * Converts the mermaid text to Excalidraw elements server-side, then
+   * saves as a regular scene with thumbnail generation.
+   */
+  async createFromMermaid(
+    data: { definition: string; title?: string; is_public?: boolean },
+    userId?: string,
+  ): Promise<{ scene?: SceneModel; error?: string }> {
+    if (!data.definition || typeof data.definition !== "string") {
+      throw new BadRequestException("Missing or invalid 'definition' field. Expected a mermaid diagram string.");
+    }
+
+    // Trim and validate non-empty
+    const definition = data.definition.trim();
+    if (definition.length === 0) {
+      throw new BadRequestException("Mermaid definition is empty");
+    }
+
+    // Convert mermaid → Excalidraw elements
+    let elements: any[];
+    let files: Record<string, any> | undefined;
+    try {
+      const result = await convertMermaidToExcalidraw(definition);
+      elements = result.elements;
+      files = result.files;
+    } catch (err: any) {
+      throw new BadRequestException(
+        `Mermaid conversion failed: ${err.message || "Unknown error"}`,
+      );
+    }
+
+    if (!elements || elements.length === 0) {
+      throw new BadRequestException(
+        "Mermaid conversion produced no elements. Check that the diagram syntax is valid.",
+      );
+    }
+
+    // Build Excalidraw scene data
+    const sceneData: Record<string, unknown> = {
+      elements,
+      appState: {},
+      ...(files && Object.keys(files).length > 0 ? { files } : {}),
+    };
+
+    // Generate thumbnail (best-effort, same as regular scene creation)
+    const thumbnail = await generateThumbnail(sceneData);
+
+    const isPublic = data.is_public ?? false;
+    const scene = await this.scenesRepository.create({
+      title: data.title || "Mermaid Diagram",
+      data: sceneData,
       is_public: isPublic,
       user_id: userId ?? null,
       ...(thumbnail && { thumbnail }),

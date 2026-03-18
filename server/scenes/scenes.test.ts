@@ -1122,4 +1122,164 @@ describe("Scene routes", () => {
       expect(s2!.user_id).toBe(ALICE_ID);
     });
   });
+
+  // ========== Create from Mermaid ==========
+
+  describe("POST /api/scenes/from-mermaid", () => {
+    it("creates a scene from a valid flowchart definition", async () => {
+      app = await createAuthenticatedTestApp({ userId: ALICE_ID });
+      await seedAlice(app);
+
+      const res = await request(app.getHttpServer())
+        .post("/api/scenes/from-mermaid")
+        .send({
+          definition: "graph TD\n  A[Start] --> B[End]",
+          title: "My Flowchart",
+        });
+
+      expect(res.status).toBe(201);
+      expect(res.body.id).toBeTruthy();
+      expect(res.body.title).toBe("My Flowchart");
+      expect(res.body.user_id).toBe(ALICE_ID);
+      // Scene data should contain Excalidraw elements
+      expect(res.body.data.elements).toBeInstanceOf(Array);
+      expect(res.body.data.elements.length).toBeGreaterThan(0);
+    }, 30_000);
+
+    it("creates elements with correct types for a flowchart", async () => {
+      app = await createAuthenticatedTestApp({ userId: ALICE_ID });
+      await seedAlice(app);
+
+      const res = await request(app.getHttpServer())
+        .post("/api/scenes/from-mermaid")
+        .send({
+          definition: "graph TD\n  A[Start] --> B{Decision} --> C[End]",
+        });
+
+      expect(res.status).toBe(201);
+      const elements = res.body.data.elements;
+      const types = elements.map((e: any) => e.type);
+      // Should have rectangles, diamonds, and arrows
+      expect(types).toContain("rectangle");
+      expect(types).toContain("diamond");
+      expect(types).toContain("arrow");
+    }, 30_000);
+
+    it("defaults title to 'Mermaid Diagram' when not provided", async () => {
+      app = await createAuthenticatedTestApp({ userId: ALICE_ID });
+      await seedAlice(app);
+
+      const res = await request(app.getHttpServer())
+        .post("/api/scenes/from-mermaid")
+        .send({
+          definition: "graph LR\n  A --> B",
+        });
+
+      expect(res.status).toBe(201);
+      expect(res.body.title).toBe("Mermaid Diagram");
+    }, 30_000);
+
+    it("respects is_public flag", async () => {
+      app = await createAuthenticatedTestApp({ userId: ALICE_ID });
+      await seedAlice(app);
+
+      const res = await request(app.getHttpServer())
+        .post("/api/scenes/from-mermaid")
+        .send({
+          definition: "graph TD\n  A --> B",
+          is_public: true,
+        });
+
+      expect(res.status).toBe(201);
+      expect(res.body.is_public).toBe(true);
+    }, 30_000);
+
+    it("works for anonymous users", async () => {
+      app = await createTestApp();
+      const agent = request.agent(app.getHttpServer());
+
+      const res = await agent
+        .post("/api/scenes/from-mermaid")
+        .send({
+          definition: "graph TD\n  A --> B",
+          title: "Anon Mermaid",
+        });
+
+      expect(res.status).toBe(201);
+      expect(res.body.user_id).toBeNull();
+      // Anonymous defaults to public
+      expect(res.body.is_public).toBe(true);
+    }, 30_000);
+
+    it("returns 400 for missing definition", async () => {
+      app = await createTestApp();
+
+      const res = await request(app.getHttpServer())
+        .post("/api/scenes/from-mermaid")
+        .send({ title: "No definition" });
+
+      expect(res.status).toBe(400);
+      expect(res.body.message).toMatch(/definition/i);
+    });
+
+    it("returns 400 for empty definition", async () => {
+      app = await createTestApp();
+
+      const res = await request(app.getHttpServer())
+        .post("/api/scenes/from-mermaid")
+        .send({ definition: "  " });
+
+      expect(res.status).toBe(400);
+      expect(res.body.message).toMatch(/empty/i);
+    });
+
+    it("returns 400 for invalid mermaid syntax", async () => {
+      app = await createTestApp();
+
+      const res = await request(app.getHttpServer())
+        .post("/api/scenes/from-mermaid")
+        .send({ definition: "this is not valid mermaid at all $$$$" });
+
+      expect(res.status).toBe(400);
+      expect(res.body.message).toMatch(/mermaid/i);
+    }, 30_000);
+
+    it("creates a scene from a class diagram", async () => {
+      app = await createAuthenticatedTestApp({ userId: ALICE_ID });
+      await seedAlice(app);
+
+      const res = await request(app.getHttpServer())
+        .post("/api/scenes/from-mermaid")
+        .send({
+          definition: "classDiagram\n  class Animal {\n    +String name\n    +makeSound()\n  }\n  class Dog {\n    +fetch()\n  }\n  Animal <|-- Dog",
+          title: "Class Diagram",
+        });
+
+      expect(res.status).toBe(201);
+      expect(res.body.data.elements.length).toBeGreaterThan(0);
+    }, 30_000);
+
+    it("stored scene is retrievable via GET", async () => {
+      app = await createAuthenticatedTestApp({ userId: ALICE_ID });
+      await seedAlice(app);
+
+      const createRes = await request(app.getHttpServer())
+        .post("/api/scenes/from-mermaid")
+        .send({
+          definition: "graph TD\n  A[Hello] --> B[World]",
+          title: "Retrievable",
+          is_public: true,
+        });
+
+      expect(createRes.status).toBe(201);
+      const id = createRes.body.id;
+
+      const getRes = await request(app.getHttpServer())
+        .get(`/api/scenes/${id}`);
+
+      expect(getRes.status).toBe(200);
+      expect(getRes.body.title).toBe("Retrievable");
+      expect(getRes.body.data.elements.length).toBeGreaterThan(0);
+    }, 30_000);
+  });
 });

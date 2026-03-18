@@ -228,6 +228,40 @@ export class ScenesController {
   }
 
   /**
+   * POST /api/scenes/from-mermaid
+   * Create a new scene from a Mermaid diagram definition.
+   * The server converts the mermaid text to Excalidraw elements, generates
+   * a thumbnail, and persists as a regular scene.
+   *
+   * Body: { definition: string, title?: string, is_public?: boolean }
+   *
+   * Works with or without authentication (same ownership model as POST /api/scenes).
+   */
+  @Post("from-mermaid")
+  @UseGuards(OptionalAuthGuard)
+  async createFromMermaid(@Body() body: any, @Req() req: Request, @Res() res: Response) {
+    const session = (req as any).session;
+    const userId: string | undefined = session?.userId;
+    const { definition, title, is_public } = body;
+
+    // Anonymous creations default to public; authenticated default to private
+    const resolvedPublic = is_public ?? !userId;
+
+    const result = await this.scenesService.createFromMermaid(
+      { definition, title, is_public: resolvedPublic },
+      userId,
+    );
+
+    // Track anonymous scene ownership in session
+    if (!userId && result.scene) {
+      if (!session.ownedScenes) session.ownedScenes = [];
+      session.ownedScenes.push(result.scene.id);
+    }
+
+    res.status(201).json(result.scene);
+  }
+
+  /**
    * POST /api/scenes
    * Create a new scene. Works with or without authentication:
    *   - Authenticated: user_id = session user, is_public defaults to false

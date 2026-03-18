@@ -18,7 +18,15 @@ export default defineConfig({
   server: {
     port: 5173,
     proxy: {
-      "/api": "http://localhost:3000",
+      "/api": {
+        target: "http://localhost:3000",
+        // Only proxy actual API calls, not client source files under client/api/
+        bypass(req) {
+          if (req.url?.match(/\.(ts|tsx|js|jsx|css|json)$/)) {
+            return req.url;
+          }
+        },
+      },
       "/auth": "http://localhost:3000",
     },
   },
